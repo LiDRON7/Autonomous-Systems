@@ -29,7 +29,7 @@ from std_srvs.srv import SetBool, Trigger
 from .geo import gps_to_ned
 from .grid import RollingGrid
 from .planner import astar, simplify
-from .state import MissionState, data_is_fresh
+from .state import MissionState, can_transition, data_is_fresh
 
 
 ACTIVE_STATES = {
@@ -175,6 +175,8 @@ class MissionNode(Node):
     def _transition(self, state: MissionState) -> None:
         if state == self.state:
             return
+        if not can_transition(self.state, state):
+            raise RuntimeError(f"invalid mission transition: {self.state.value} -> {state.value}")
         self.get_logger().info(f"Mission {self.state.value} -> {state.value}")
         self.state = state
         self.state_started = self._now()
@@ -276,6 +278,9 @@ class MissionNode(Node):
 
     def _enable(self, request, response):
         if not request.data:
+            if self.state not in ACTIVE_STATES:
+                response.success, response.message = False, "mission is not active"
+                return response
             self._transition(MissionState.HOLD)
             response.success, response.message = True, "mission holding"
             return response
@@ -293,6 +298,9 @@ class MissionNode(Node):
         return response
 
     def _abort(self, _request, response):
+        if self.state in {MissionState.IDLE, MissionState.COMPLETE, MissionState.ABORT}:
+            response.success, response.message = False, "no active mission"
+            return response
         self._command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
         self._transition(MissionState.ABORT)
         response.success, response.message = True, "controlled landing requested"
