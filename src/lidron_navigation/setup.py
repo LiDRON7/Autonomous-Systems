@@ -11,6 +11,7 @@ setup(
         ("share/" + package_name, ["package.xml"]),
     ],
     install_requires=["setuptools", "numpy"],
+    tests_require=["pytest"],
     zip_safe=True,
     maintainer="LiDRON",
     maintainer_email="lidron@uprm.edu",

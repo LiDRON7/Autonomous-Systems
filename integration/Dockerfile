@@ -13,13 +13,6 @@ RUN git clone --depth 1 --branch v1.15.0 https://github.com/PX4/px4_msgs.git \
     && cd /opt/px4_ws \
     && colcon build --merge-install
 
-RUN git clone --depth 1 --branch 2.4.2 \
-      https://github.com/eProsima/Micro-XRCE-DDS-Agent.git /tmp/micro-xrce-agent \
-    && cmake -S /tmp/micro-xrce-agent -B /tmp/micro-xrce-agent/build \
-    && cmake --build /tmp/micro-xrce-agent/build --parallel \
-    && cmake --install /tmp/micro-xrce-agent/build \
-    && ldconfig
-
 COPY integration/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
