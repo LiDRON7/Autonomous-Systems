@@ -25,7 +25,10 @@ class LandingAssessment:
     clear_radius_m: float = -1.0
 
     def as_dict(self) -> dict:
-        return asdict(self)
+        return {
+            key: (None if isinstance(value, float) and not np.isfinite(value) else value)
+            for key, value in asdict(self).items()
+        }
 
 
 def _reject(reason: str, count: int) -> LandingAssessment:

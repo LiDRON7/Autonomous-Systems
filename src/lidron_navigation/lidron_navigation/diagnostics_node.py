@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import rclpy
 from px4_msgs.msg import VehicleLocalPosition, VehicleStatus
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image, NavSatFix, PointCloud2
 from std_srvs.srv import Trigger
 
@@ -27,6 +28,12 @@ class DiagnosticsNode(Node):
             "px4_position": TopicHealth(),
             "px4_status": TopicHealth(),
         }
+        px4_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
         self.create_subscription(Image, "/oakd/depth/image", self._callback("oakd_depth_image"), 10)
         self.create_subscription(
             PointCloud2, "/oakd/depth/points", self._callback("oakd_depth_points"), 10
@@ -37,10 +44,10 @@ class DiagnosticsNode(Node):
             VehicleLocalPosition,
             "/fmu/out/vehicle_local_position",
             self._callback("px4_position"),
-            10,
+            px4_qos,
         )
         self.create_subscription(
-            VehicleStatus, "/fmu/out/vehicle_status", self._callback("px4_status"), 10
+            VehicleStatus, "/fmu/out/vehicle_status", self._callback("px4_status"), px4_qos
         )
         self.create_service(Trigger, "/autonomy/preflight_check", self._check)
 

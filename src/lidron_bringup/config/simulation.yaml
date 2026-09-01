@@ -18,6 +18,9 @@ lidron_perception:
 lidron_mission:
   ros__parameters:
     auto_start: false
+    destination.north: 8.0
+    destination.east: 0.0
+    destination.down: -5.0
     cruise_altitude_m: 5.0
     arrival_tolerance_m: 0.75
     sensor_timeout_s: 1.5

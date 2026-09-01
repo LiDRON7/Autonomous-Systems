@@ -14,6 +14,7 @@ from px4_msgs.msg import (
     TrajectorySetpoint,
     VehicleAttitude,
     VehicleCommand,
+    VehicleCommandAck,
     VehicleLandDetected,
     VehicleLocalPosition,
     VehicleStatus,
@@ -80,6 +81,9 @@ class MissionNode(Node):
             VehicleLandDetected, "/fmu/out/vehicle_land_detected", self._on_land, px4_qos
         )
         self.create_subscription(
+            VehicleCommandAck, "/fmu/out/vehicle_command_ack", self._on_command_ack, px4_qos
+        )
+        self.create_subscription(
             PointCloud2, "/oakd/depth/points", self._on_depth_points, 10
         )
         self.create_subscription(
@@ -127,8 +131,18 @@ class MissionNode(Node):
         self.state_started = self._now()
         self.mission_started: float | None = None
         self.offboard_warmup = 0
+        self.last_command_ack: tuple[int, int] | None = None
         self.search_index = 0
         self.timer = self.create_timer(0.1, self._tick)
+        if bool(self.get_parameter("auto_start").value):
+            self.destination = (
+                float(self.get_parameter("destination.north").value),
+                float(self.get_parameter("destination.east").value),
+                float(self.get_parameter("destination.down").value),
+            )
+            self.original_destination = self.destination
+            self.mission_started = self._now()
+            self._transition(MissionState.PREFLIGHT)
 
     def _declare_parameters(self) -> None:
         values = {
@@ -148,6 +162,9 @@ class MissionNode(Node):
             "map.expiry_s": 2.0,
             "map.min_height_m": -1.5,
             "map.max_height_m": 1.5,
+            "destination.north": 8.0,
+            "destination.east": 0.0,
+            "destination.down": -5.0,
         }
         for name, value in values.items():
             self.declare_parameter(name, value)
@@ -184,6 +201,15 @@ class MissionNode(Node):
 
     def _on_land(self, msg: VehicleLandDetected) -> None:
         self.landed = bool(msg.landed)
+
+    def _on_command_ack(self, msg: VehicleCommandAck) -> None:
+        self.last_command_ack = int(msg.command), int(msg.result)
+        accepted = {
+            VehicleCommandAck.VEHICLE_CMD_RESULT_ACCEPTED,
+            VehicleCommandAck.VEHICLE_CMD_RESULT_IN_PROGRESS,
+        }
+        if int(msg.result) not in accepted and self.state in ACTIVE_STATES:
+            self._safe_abort(f"PX4 rejected command {msg.command}: result {msg.result}")
 
     def _on_obstacle(self, msg: Bool) -> None:
         self.obstacle_detected = bool(msg.data)
