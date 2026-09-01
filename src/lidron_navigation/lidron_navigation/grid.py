@@ -15,6 +15,7 @@ class RollingGrid:
     inflation_m: float = 1.0
     expiry_s: float = 2.0
     occupied: dict[Cell, float] = field(default_factory=dict)
+    observations: dict[Point, float] = field(default_factory=dict)
 
     @property
     def width(self) -> int:
@@ -37,22 +38,32 @@ class RollingGrid:
         return center[0] - half, center[1] - half
 
     def observe(self, points: list[Point], origin: Point, now_s: float) -> None:
-        radius = int(math.ceil(self.inflation_m / self.resolution))
         for point in points:
+            key = (
+                round(point[0] / self.resolution) * self.resolution,
+                round(point[1] / self.resolution) * self.resolution,
+            )
+            self.observations[key] = now_s
+        self.expire(now_s)
+        self.occupied = {}
+        radius = int(math.ceil(self.inflation_m / self.resolution))
+        for point, stamp in self.observations.items():
             cell = self.to_cell(point, origin)
             for dx in range(-radius, radius + 1):
                 for dy in range(-radius, radius + 1):
                     if math.hypot(dx, dy) * self.resolution <= self.inflation_m:
                         inflated = cell[0] + dx, cell[1] + dy
                         if self.in_bounds(inflated):
-                            self.occupied[inflated] = now_s
-        self.expire(now_s)
+                            self.occupied[inflated] = stamp
 
     def expire(self, now_s: float) -> None:
-        self.occupied = {
-            cell: stamp
-            for cell, stamp in self.occupied.items()
+        self.observations = {
+            point: stamp
+            for point, stamp in self.observations.items()
             if now_s - stamp <= self.expiry_s
+        }
+        self.occupied = {
+            cell: stamp for cell, stamp in self.occupied.items() if now_s - stamp <= self.expiry_s
         }
 
     def in_bounds(self, cell: Cell) -> bool:
