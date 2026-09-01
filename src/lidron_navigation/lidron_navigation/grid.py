@@ -1,8 +1,7 @@
 """Rolling occupancy grid built from forward depth points."""
 
-from dataclasses import dataclass, field
 import math
-
+from dataclasses import dataclass, field
 
 Cell = tuple[int, int]
 Point = tuple[float, float]
@@ -19,12 +18,12 @@ class RollingGrid:
 
     @property
     def width(self) -> int:
-        return max(3, int(math.ceil(self.size_m / self.resolution)))
+        return max(3, math.ceil(self.size_m / self.resolution))
 
     def to_cell(self, point: Point, origin: Point) -> Cell:
         return (
-            int(math.floor((point[0] - origin[0]) / self.resolution)),
-            int(math.floor((point[1] - origin[1]) / self.resolution)),
+            math.floor((point[0] - origin[0]) / self.resolution),
+            math.floor((point[1] - origin[1]) / self.resolution),
         )
 
     def to_world(self, cell: Cell, origin: Point) -> Point:
@@ -46,7 +45,7 @@ class RollingGrid:
             self.observations[key] = now_s
         self.expire(now_s)
         self.occupied = {}
-        radius = int(math.ceil(self.inflation_m / self.resolution))
+        radius = math.ceil(self.inflation_m / self.resolution)
         for point, stamp in self.observations.items():
             cell = self.to_cell(point, origin)
             for dx in range(-radius, radius + 1):

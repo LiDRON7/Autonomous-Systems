@@ -1,10 +1,9 @@
 """A* planning and path simplification on a rolling occupancy grid."""
 
-from heapq import heappop, heappush
 import math
+from heapq import heappop, heappush
 
 from .grid import Cell
-
 
 NEIGHBORS = tuple(
     (dx, dy)

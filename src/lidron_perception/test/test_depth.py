@@ -1,5 +1,4 @@
 import numpy as np
-
 from lidron_perception.depth import minimum_depth
 
 

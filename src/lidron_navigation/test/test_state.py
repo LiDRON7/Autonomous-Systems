@@ -1,3 +1,5 @@
+from itertools import pairwise
+
 from lidron_navigation.state import MissionState, can_transition, data_is_fresh
 
 
@@ -13,7 +15,7 @@ def test_nominal_mission_transitions_are_allowed():
         MissionState.LANDING,
         MissionState.COMPLETE,
     ]
-    assert all(can_transition(first, second) for first, second in zip(route, route[1:]))
+    assert all(can_transition(first, second) for first, second in pairwise(route))
 
 
 def test_unsafe_transition_is_rejected():

@@ -1,7 +1,5 @@
 import numpy as np
-
 from lidron_perception.landing import LandingLimits, assess_landing_zone
-
 
 LIMITS = LandingLimits(min_points=25)
 

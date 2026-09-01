@@ -37,9 +37,10 @@ def _reject(reason: str, count: int) -> LandingAssessment:
 
 def assess_landing_zone(
     points: np.ndarray,
-    limits: LandingLimits = LandingLimits(),
+    limits: LandingLimits | None = None,
 ) -> LandingAssessment:
     """Fit a local ground plane and validate slope, roughness, and clearance."""
+    limits = limits or LandingLimits()
     cloud = np.asarray(points, dtype=float).reshape((-1, 3))
     cloud = cloud[np.isfinite(cloud).all(axis=1)]
     half = limits.footprint_m / 2.0

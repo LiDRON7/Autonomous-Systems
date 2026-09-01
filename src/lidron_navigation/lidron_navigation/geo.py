@@ -2,7 +2,6 @@
 
 import math
 
-
 EARTH_RADIUS_M = 6_378_137.0
 
 

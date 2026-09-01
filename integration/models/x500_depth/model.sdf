@@ -14,7 +14,7 @@
       <pose relative_to="base_link">.12 .03 .242 0 0 0</pose>
     </joint>
     <link name="landing_lidar_link">
-      <pose relative_to="base_link">0 0 -0.12 0 1.570796 0</pose>
+      <pose relative_to="base_link">0 0 -0.12 0 0 0</pose>
       <sensor name="landing_lidar" type="gpu_lidar">
         <topic>/lidar/points</topic>
         <update_rate>10</update_rate>
@@ -31,8 +31,8 @@
             <vertical>
               <samples>16</samples>
               <resolution>1</resolution>
-              <min_angle>-0.261799</min_angle>
-              <max_angle>0.261799</max_angle>
+              <min_angle>-1.570796</min_angle>
+              <max_angle>-1.221730</max_angle>
             </vertical>
           </scan>
           <range>

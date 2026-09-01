@@ -2,12 +2,10 @@
 
 import json
 import math
-import time
 
 import numpy as np
 import rclpy
 from geometry_msgs.msg import PoseStamped
-from lidron_interfaces.srv import SetGpsDestination, SetLocalDestination
 from nav_msgs.msg import OccupancyGrid, Path
 from px4_msgs.msg import (
     OffboardControlMode,
@@ -26,11 +24,12 @@ from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Bool, String
 from std_srvs.srv import SetBool, Trigger
 
+from lidron_interfaces.srv import SetGpsDestination, SetLocalDestination
+
 from .geo import gps_to_ned
 from .grid import RollingGrid
 from .planner import astar, simplify
 from .state import MissionState, can_transition, data_is_fresh
-
 
 ACTIVE_STATES = {
     MissionState.PREFLIGHT,
