@@ -26,3 +26,12 @@ def test_data_freshness_handles_missing_and_future_samples():
     assert data_is_fresh(10.0, 9.5, 1.0)
     assert not data_is_fresh(10.0, None, 1.0)
     assert not data_is_fresh(10.0, 10.1, 1.0)
+
+
+def test_every_active_stage_can_abort():
+    active = set(MissionState) - {
+        MissionState.IDLE,
+        MissionState.COMPLETE,
+        MissionState.ABORT,
+    }
+    assert all(can_transition(state, MissionState.ABORT) for state in active)

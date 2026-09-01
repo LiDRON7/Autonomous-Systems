@@ -28,3 +28,23 @@ def test_rejects_nearby_obstacle():
     result = assess_landing_zone(points, LIMITS)
     assert not result.suitable
     assert result.reason == "obstacle_inside_clearance"
+
+
+def test_rejects_sparse_cloud():
+    result = assess_landing_zone(flat_plane()[:10], LIMITS)
+    assert not result.suitable
+    assert result.reason == "insufficient_ground_points"
+
+
+def test_rejects_rough_surface():
+    points = flat_plane()
+    points[::2, 2] = 0.2
+    result = assess_landing_zone(points, LIMITS)
+    assert not result.suitable
+    assert result.reason == "surface_too_rough"
+
+
+def test_ignores_non_finite_points():
+    points = np.vstack([flat_plane(), [np.nan, 0.0, 0.0]])
+    result = assess_landing_zone(points, LIMITS)
+    assert result.suitable

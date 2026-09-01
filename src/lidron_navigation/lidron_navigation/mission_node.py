@@ -28,7 +28,7 @@ from lidron_interfaces.srv import SetGpsDestination, SetLocalDestination
 
 from .geo import gps_to_ned
 from .grid import RollingGrid
-from .planner import astar, simplify
+from .planner import astar, landing_search_offset, simplify
 from .state import MissionState, can_transition, data_is_fresh
 
 ACTIVE_STATES = {
@@ -441,14 +441,14 @@ class MissionNode(Node):
         limit = int(self.get_parameter("landing_search_limit").value)
         if self.search_index >= limit:
             return False
-        offsets = ((1, 0), (0, 1), (-1, 0), (0, -1), (1, 1), (-1, 1), (-1, -1), (1, -1))
-        dx, dy = offsets[self.search_index % len(offsets)]
-        ring = 1 + self.search_index // len(offsets)
-        step = float(self.get_parameter("landing_search_step_m").value) * ring
+        dx, dy = landing_search_offset(
+            self.search_index,
+            float(self.get_parameter("landing_search_step_m").value),
+        )
         self.search_index += 1
         self.destination = (
-            self.original_destination[0] + dx * step,
-            self.original_destination[1] + dy * step,
+            self.original_destination[0] + dx,
+            self.original_destination[1] + dy,
             self.original_destination[2],
         )
         self._transition(MissionState.PLANNING)

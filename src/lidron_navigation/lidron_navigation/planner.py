@@ -12,6 +12,26 @@ NEIGHBORS = tuple(
     if (dx, dy) != (0, 0)
 )
 
+SEARCH_DIRECTIONS = (
+    (1, 0),
+    (0, 1),
+    (-1, 0),
+    (0, -1),
+    (1, 1),
+    (-1, 1),
+    (-1, -1),
+    (1, -1),
+)
+
+
+def landing_search_offset(index: int, step_m: float) -> tuple[float, float]:
+    """Return successive landing-search offsets in expanding rings."""
+    if index < 0 or step_m <= 0.0:
+        raise ValueError("index must be non-negative and step_m must be positive")
+    direction = SEARCH_DIRECTIONS[index % len(SEARCH_DIRECTIONS)]
+    ring = 1 + index // len(SEARCH_DIRECTIONS)
+    return direction[0] * step_m * ring, direction[1] * step_m * ring
+
 
 def astar(start: Cell, goal: Cell, occupied: set[Cell], width: int) -> list[Cell]:
     """Return a lowest-cost 8-connected route or an empty list."""
