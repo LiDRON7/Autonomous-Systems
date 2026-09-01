@@ -7,17 +7,17 @@ ROS 2 software for autonomous navigation, obstacle avoidance, and landing.
 ```text
 Autonomous-Systems/
 ├── src/
-│   ├── lidron_interfaces/   Destination service definitions
-│   ├── lidron_perception/   OAK-D obstacle detection and LiDAR landing checks
-│   ├── lidron_navigation/   Route planning, avoidance, and PX4 mission control
-│   └── lidron_bringup/      Launch files and configuration
+│   ├── interfaces/   Destination service definitions
+│   ├── perception/   OAK-D obstacle detection and LiDAR landing checks
+│   ├── navigation/   Route planning, avoidance, and PX4 mission control
+│   └── bringup/      Launch files and configuration
 ├── integration/             Docker and Simulation integration
 └── scripts/                 Commands for starting and stopping Simulation
 ```
 
 The OAK-D Pro faces forward and is used to detect obstacles and build the map.
 The LiDAR faces downward and is used only to decide whether an area is safe for
-landing. `lidron_navigation` connects both systems to PX4 and is the only package
+landing. `navigation` connects both systems to PX4 and is the only package
 that sends flight commands.
 
 ## Test the code
@@ -84,7 +84,7 @@ Set a local NED destination. This example is 8 meters north at an altitude of
 docker exec lidron_autonomy bash -lc '
   source /autonomy/install/setup.bash
   ros2 service call /autonomy/set_local_destination \
-    lidron_interfaces/srv/SetLocalDestination \
+    interfaces/srv/SetLocalDestination \
     "{north: 8.0, east: 0.0, down: -5.0}"
 '
 ```
@@ -114,5 +114,5 @@ Stop everything:
 ./scripts/simulation.sh down
 ```
 
-Parameters for Simulation are in `src/lidron_bringup/config/simulation.yaml`.
-Parameters for the real drone are in `src/lidron_bringup/config/hardware.yaml`.
+Parameters for Simulation are in `src/bringup/config/simulation.yaml`.
+Parameters for the real drone are in `src/bringup/config/hardware.yaml`.
