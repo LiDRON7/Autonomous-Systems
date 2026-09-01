@@ -133,7 +133,11 @@ class MissionNode(Node):
         self.last_command_ack: tuple[int, int] | None = None
         self.search_index = 0
         self.timer = self.create_timer(0.1, self._tick)
-        if bool(self.get_parameter("auto_start").value):
+        auto_start = bool(self.get_parameter("auto_start").value)
+        hardware_mode = bool(self.get_parameter("hardware_mode").value)
+        if auto_start and hardware_mode:
+            self.get_logger().error("auto_start is disabled in hardware mode")
+        elif auto_start:
             self.destination = (
                 float(self.get_parameter("destination.north").value),
                 float(self.get_parameter("destination.east").value),
@@ -146,6 +150,7 @@ class MissionNode(Node):
     def _declare_parameters(self) -> None:
         values = {
             "auto_start": False,
+            "hardware_mode": False,
             "cruise_altitude_m": 5.0,
             "arrival_tolerance_m": 0.75,
             "sensor_timeout_s": 1.0,

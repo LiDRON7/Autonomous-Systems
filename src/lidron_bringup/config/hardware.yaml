@@ -18,6 +18,7 @@ lidron_perception:
 lidron_mission:
   ros__parameters:
     auto_start: false
+    hardware_mode: true
     cruise_altitude_m: 5.0
     arrival_tolerance_m: 0.75
     sensor_timeout_s: 0.75
