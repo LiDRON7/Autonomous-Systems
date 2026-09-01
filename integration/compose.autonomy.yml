@@ -1,0 +1,16 @@
+services:
+  autonomy:
+    image: lidron-autonomy:jazzy-px4-1.15
+    build:
+      context: ${AUTONOMY_ROOT}
+      dockerfile: integration/Dockerfile
+    container_name: lidron_autonomy
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+    volumes:
+      - ${AUTONOMY_ROOT}:/autonomy
+    depends_on:
+      - px4
+      - ros
+    restart: "no"

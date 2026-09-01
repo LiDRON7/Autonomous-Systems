@@ -1,0 +1,35 @@
+/**:
+  ros__parameters:
+    use_sim_time: false
+
+lidron_perception:
+  ros__parameters:
+    depth_topic: /oakd/depth/image
+    lidar_topic: /lidar/points
+    obstacle_threshold_m: 2.0
+    depth_roi_ratio: 0.4
+    landing.footprint_m: 1.5
+    landing.min_points: 120
+    landing.max_slope_deg: 6.0
+    landing.max_roughness_m: 0.06
+    landing.obstacle_height_m: 0.15
+    landing.clearance_m: 1.0
+
+lidron_mission:
+  ros__parameters:
+    auto_start: false
+    cruise_altitude_m: 5.0
+    arrival_tolerance_m: 0.75
+    sensor_timeout_s: 0.75
+    hold_timeout_s: 5.0
+    mission_timeout_s: 300.0
+    map.resolution: 0.4
+    map.size_m: 25.0
+    map.inflation_m: 1.25
+    map.expiry_s: 1.5
+    map.min_height_m: -1.5
+    map.max_height_m: 1.5
+    landing_confirmations: 12
+    landing_check_timeout_s: 8.0
+    landing_search_step_m: 1.5
+    landing_search_limit: 8

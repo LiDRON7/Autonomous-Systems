@@ -18,5 +18,6 @@ setup(
     license="Apache-2.0",
     entry_points={"console_scripts": [
         "mission_node = lidron_navigation.mission_node:main",
+        "diagnostics_node = lidron_navigation.diagnostics_node:main",
     ]},
 )
