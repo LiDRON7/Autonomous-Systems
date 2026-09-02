@@ -1,12 +1,4 @@
 services:
-  drone-dev:
-    volumes:
-      - ${AUTONOMY_ROOT}/integration/models/x500_depth:/drone_sim/models/x500_depth:ro
-
-  px4:
-    volumes:
-      - ${AUTONOMY_ROOT}/integration/models/x500_depth:/drone_sim/models/x500_depth:ro
-
   dds-agent:
     image: microros/micro-ros-agent:jazzy
     container_name: lidron_dds_agent

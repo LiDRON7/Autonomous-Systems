@@ -27,6 +27,9 @@ This repository contains the autonomous navigation, obstacle avoidance, and
 landing software. It runs in its own ROS 2 container alongside the separate
 LiDRON Simulation environment.
 
+Gazebo worlds, vehicle models, and simulated sensors belong in the Simulation
+repository and are not stored here.
+
 The combined stack uses these containers:
 
 | Container | Role |
