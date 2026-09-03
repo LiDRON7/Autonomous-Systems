@@ -6,19 +6,19 @@ labels: enhancement
 assignees: ""
 ---
 
-# 📝 Title  
+# Title  
 <!-- Short, clear summary of the task -->  
 Example: Implement Accessibility Testing for the Login & Sign-Up Process  
 
 ---
 
-## 🎯 Objective  
+## Objective  
 <!-- What is the main goal of this issue? Why is it needed? -->  
 Example: Ensure login and sign-up pages are accessible to all users by validating compliance with WCAG standards.  
 
 ---
 
-## 📄 Description  
+## Description  
 <!-- Detailed explanation of what needs to be done. Include requirements if possible. -->  
 - UI elements must be properly labeled and accessible via screen readers.  
 - Forms should be fully navigable via keyboard.  
@@ -28,8 +28,8 @@ Example: Ensure login and sign-up pages are accessible to all users by validatin
 ---
 
 
-## 📅 Timeframe  
-**Target Completion Date:** <!-- e.g., 2025-09-10 -->  
+## Test Instructions
+<!-- How to test, dont say things like, code passes pipeline and no syntax errors; actual instructions on how to test this fits into the system -->  
 
 ---
 
