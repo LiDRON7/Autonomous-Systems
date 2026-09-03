@@ -1,0 +1,24 @@
+services:
+  dds-agent:
+    image: microros/micro-ros-agent:jazzy
+    container_name: lidron_dds_agent
+    network_mode: host
+    command: udp4 --port 8888
+    restart: "no"
+
+  autonomy:
+    image: lidron-autonomy:jazzy-px4-1.15
+    build:
+      context: ${AUTONOMY_ROOT}
+      dockerfile: integration/Dockerfile
+    container_name: lidron_autonomy
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+    volumes:
+      - ${AUTONOMY_ROOT}:/autonomy
+    depends_on:
+      - px4
+      - ros
+      - dds-agent
+    restart: "no"
