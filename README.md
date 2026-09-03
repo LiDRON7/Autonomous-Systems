@@ -12,6 +12,8 @@ ROS 2 Jazzy · PX4 · Docker
 - [Setup: macOS](#setup-macos)
 - [Setup: Windows](#setup-windows)
 - [Repository Structure](#repository-structure)
+- [ROS Packages and Topics](#ros-packages-and-topics)
+- [How the System Works](#how-the-system-works)
 - [Build](#build)
 - [Run with Simulation](#run-with-simulation)
 - [Use the Autonomous System](#use-the-autonomous-system)
@@ -134,6 +136,110 @@ Autonomous-Systems/
 ├── integration/      Docker and Simulation integration
 └── scripts/          Simulation control script
 ```
+
+---
+
+## ROS Packages and Topics
+
+### `interfaces`
+
+Defines the destination services used by `navigation`:
+
+| Service type | Fields |
+| --- | --- |
+| `interfaces/srv/SetLocalDestination` | North, east, and down coordinates |
+| `interfaces/srv/SetGpsDestination` | Latitude, longitude, and altitude |
+
+### `perception`
+
+Processes camera and LiDAR data. The LiDAR pipeline removes invalid points,
+downsamples the cloud with 0.03 m voxels, removes statistical outliers with a
+KD-tree, and evaluates the landing surface.
+
+Inputs:
+
+| Topic | Type | Purpose |
+| --- | --- | --- |
+| `/oakd/depth/image` | `sensor_msgs/msg/Image` | Immediate obstacle-distance check |
+| `/lidar/points` | `sensor_msgs/msg/PointCloud2` | Landing-area evaluation |
+
+Outputs:
+
+| Topic | Type | Purpose |
+| --- | --- | --- |
+| `/perception/obstacle_detected` | `std_msgs/msg/Bool` | Immediate obstacle warning |
+| `/perception/obstacle_distance` | `std_msgs/msg/Float32` | Closest valid depth measurement |
+| `/landing/assessment` | `std_msgs/msg/String` | Landing result and quality measurements as JSON |
+
+### `navigation`
+
+Builds the obstacle map, calculates paths, manages mission states, and owns all
+PX4 flight commands.
+
+Inputs:
+
+| Topic | Type | Purpose |
+| --- | --- | --- |
+| `/oakd/depth/points` | `sensor_msgs/msg/PointCloud2` | Rolling occupancy map |
+| `/perception/obstacle_detected` | `std_msgs/msg/Bool` | Stop and replan trigger |
+| `/landing/assessment` | `std_msgs/msg/String` | Landing approval |
+| `/fmu/out/vehicle_local_position` | `px4_msgs/msg/VehicleLocalPosition` | Position and NED reference |
+| `/fmu/out/vehicle_attitude` | `px4_msgs/msg/VehicleAttitude` | Vehicle heading |
+| `/fmu/out/vehicle_status` | `px4_msgs/msg/VehicleStatus` | Arm and flight-mode status |
+| `/fmu/out/vehicle_command_ack` | `px4_msgs/msg/VehicleCommandAck` | Command acceptance or rejection |
+| `/fmu/out/vehicle_land_detected` | `px4_msgs/msg/VehicleLandDetected` | Landing confirmation |
+
+Outputs:
+
+| Topic | Type | Purpose |
+| --- | --- | --- |
+| `/fmu/in/offboard_control_mode` | `px4_msgs/msg/OffboardControlMode` | Keeps PX4 in position-control mode |
+| `/fmu/in/trajectory_setpoint` | `px4_msgs/msg/TrajectorySetpoint` | Sends the next flight target |
+| `/fmu/in/vehicle_command` | `px4_msgs/msg/VehicleCommand` | Arm, mode-change, and land commands |
+| `/autonomy/state` | `std_msgs/msg/String` | Current mission state |
+| `/autonomy/path` | `nav_msgs/msg/Path` | Current planned path |
+| `/autonomy/occupancy_grid` | `nav_msgs/msg/OccupancyGrid` | Current obstacle map |
+
+Services:
+
+| Service | Type | Purpose |
+| --- | --- | --- |
+| `/autonomy/set_local_destination` | `interfaces/srv/SetLocalDestination` | Set a local NED destination |
+| `/autonomy/set_gps_destination` | `interfaces/srv/SetGpsDestination` | Convert and set a GPS destination |
+| `/autonomy/enable` | `std_srvs/srv/SetBool` | Start or hold the mission |
+| `/autonomy/abort` | `std_srvs/srv/Trigger` | Request a controlled landing |
+| `/autonomy/preflight_check` | `std_srvs/srv/Trigger` | Check required PX4 and sensor inputs |
+
+### `bringup`
+
+Starts `perception`, `navigation`, and diagnostics with either the Simulation or
+hardware parameter file.
+
+---
+
+## How the System Works
+
+1. The operator sets one local or GPS destination and enables the mission.
+2. Diagnostics verify that PX4, camera, LiDAR, position, and GPS data are live.
+3. The mission controller arms PX4, enters offboard mode, and takes off.
+4. Camera depth points create a rolling occupancy grid. A* calculates a path
+   from the current position toward the destination.
+5. The controller follows the path through trajectory setpoints. New obstacles
+   stop forward progress and trigger a new lateral route.
+6. At the destination, the filtered LiDAR cloud is checked for sufficient area,
+   slope, roughness, and obstacle clearance.
+7. A valid assessment triggers the PX4 landing command. If the area is unsafe,
+   the system checks nearby positions before aborting safely.
+8. PX4 landing detection moves the mission to `COMPLETE`.
+
+The normal mission states are:
+
+```text
+IDLE → PREFLIGHT → TAKEOFF → PLANNING → NAVIGATING
+     → APPROACH → LANDING_CHECK → LANDING → COMPLETE
+```
+
+`REPLANNING`, `HOLD`, and `ABORT` handle obstacles, missing data, and failures.
 
 ---
 

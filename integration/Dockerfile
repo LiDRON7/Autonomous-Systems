@@ -3,7 +3,7 @@ FROM ros:jazzy
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential cmake git python3-colcon-common-extensions python3-numpy python3-pytest \
+    build-essential cmake git python3-colcon-common-extensions python3-numpy python3-pytest python3-scipy \
     ros-jazzy-sensor-msgs-py ros-jazzy-tf2-ros \
     && rm -rf /var/lib/apt/lists/*
 

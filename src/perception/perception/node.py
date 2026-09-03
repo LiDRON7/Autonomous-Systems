@@ -10,6 +10,7 @@ from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Bool, Float32, String
 
 from .depth import minimum_depth
+from .filters import preprocess_landing_cloud
 from .landing import LandingLimits, assess_landing_zone
 
 
@@ -26,6 +27,9 @@ class PerceptionNode(Node):
         self.declare_parameter("landing.max_roughness_m", 0.08)
         self.declare_parameter("landing.obstacle_height_m", 0.20)
         self.declare_parameter("landing.clearance_m", 0.75)
+        self.declare_parameter("filters.voxel_size_m", 0.03)
+        self.declare_parameter("filters.outlier_mean_k", 50)
+        self.declare_parameter("filters.outlier_threshold", 3.0)
 
         self.distance_pub = self.create_publisher(Float32, "/perception/obstacle_distance", 10)
         self.detected_pub = self.create_publisher(Bool, "/perception/obstacle_detected", 10)
@@ -70,8 +74,16 @@ class PerceptionNode(Node):
             obstacle_height_m=float(self.get_parameter("landing.obstacle_height_m").value),
             clearance_m=float(self.get_parameter("landing.clearance_m").value),
         )
-        assessment = assess_landing_zone(points, limits)
+        filtered = preprocess_landing_cloud(
+            points,
+            voxel_size_m=float(self.get_parameter("filters.voxel_size_m").value),
+            mean_k=int(self.get_parameter("filters.outlier_mean_k").value),
+            threshold=float(self.get_parameter("filters.outlier_threshold").value),
+        )
+        assessment = assess_landing_zone(filtered, limits)
         payload = assessment.as_dict() | {
+            "input_points": len(points),
+            "filtered_points": len(filtered),
             "stamp_ns": self.get_clock().now().nanoseconds,
             "frame_id": msg.header.frame_id,
         }

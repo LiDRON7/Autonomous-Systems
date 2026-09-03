@@ -14,6 +14,9 @@ perception:
     landing.max_roughness_m: 0.08
     landing.obstacle_height_m: 0.20
     landing.clearance_m: 0.75
+    filters.voxel_size_m: 0.03
+    filters.outlier_mean_k: 50
+    filters.outlier_threshold: 3.0
 
 mission:
   ros__parameters:
