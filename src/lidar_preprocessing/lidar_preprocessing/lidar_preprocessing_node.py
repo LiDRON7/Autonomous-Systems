@@ -35,9 +35,10 @@ class LidarPreprocessingNode(Node):
         self.declare_parameter('filters.enable_voxel', True)
         self.declare_parameter('filters.enable_roi', True)
         self.declare_parameter('filters.enable_outlier', True)
+        self.declare_parameter('filters.enable_ransac', True)
 
         # Algorithm Parameters
-        self.declare_parameter('voxel.size', 0.1)
+        self.declare_parameter('voxel.size', 0.03)
         self.declare_parameter('outlier.mean_k', 50)
         self.declare_parameter('outlier.threshold', 3.0)
         self.declare_parameter('ransac.dist_threshold', 0.2)
@@ -88,6 +89,7 @@ class LidarPreprocessingNode(Node):
             enable_voxel_filter=bool(self.get_parameter('filters.enable_voxel').value),
             enable_roi_filter=bool(self.get_parameter('filters.enable_roi').value),
             enable_outlier_filter=bool(self.get_parameter('filters.enable_outlier').value),
+            enable_ransac=bool(self.get_parameter('filters.enable_ransac').value),
             outlier_mean_k=int(self.get_parameter('outlier.mean_k').value),
             outlier_threshold=float(self.get_parameter('outlier.threshold').value),
         )

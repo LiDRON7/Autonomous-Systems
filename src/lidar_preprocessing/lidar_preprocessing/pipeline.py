@@ -14,11 +14,12 @@ def run_preprocessing_pipeline_with_stats(
     msg: PointCloud2,
     roi: dict[str, float] | None = None,
     ransac_params: dict[str, float] | None = None,
-    voxel_size: float = 0.1,
+    voxel_size: float = 0.03,
     enable_nan_filter: bool = True,
     enable_voxel_filter: bool = True,
     enable_roi_filter: bool = True,
     enable_outlier_filter: bool = True,
+    enable_ransac: bool = True,
     outlier_mean_k: int = 30,
     outlier_threshold: float = 2.0,
 ) -> tuple[PointCloud2, PointCloud2, PointCloud2, dict[str, int]]:
@@ -60,14 +61,18 @@ def run_preprocessing_pipeline_with_stats(
     stage_counts["after_statistical_outlier"] = _count_points(filtered_msg)
 
     # 3. Ground Segmentation (RANSAC)
-    if ransac_params is None:
-        ransac_params = {'dist_threshold': 0.2, 'num_iterations': 100}
+    if enable_ransac:
+        if ransac_params is None:
+            ransac_params = {'dist_threshold': 0.08, 'num_iterations': 100}
 
-    ground_msg, obstacles_msg = ransac_ground_segmentation(
-        filtered_msg,
-        dist_threshold=ransac_params["dist_threshold"],
-        num_iterations=ransac_params["num_iterations"],
-    )
+        ground_msg, obstacles_msg = ransac_ground_segmentation(
+            filtered_msg,
+            dist_threshold=ransac_params["dist_threshold"],
+            num_iterations=ransac_params["num_iterations"],
+        )
+    else:
+        ground_msg = filtered_msg
+        obstacles_msg = filtered_msg
 
     return filtered_msg, ground_msg, obstacles_msg, stage_counts
 
@@ -76,11 +81,12 @@ def run_preprocessing_pipeline(
     msg: PointCloud2,
     roi: dict[str, float] | None = None,
     ransac_params: dict[str, float] | None = None,
-    voxel_size: float = 0.1,
+    voxel_size: float = 0.03,
     enable_nan_filter: bool = True,
     enable_voxel_filter: bool = True,
     enable_roi_filter: bool = True,
     enable_outlier_filter: bool = True,
+    enable_ransac: bool = True, 
     outlier_mean_k: int = 30,
     outlier_threshold: float = 2.0,
 ) -> tuple[PointCloud2, PointCloud2, PointCloud2]:
@@ -96,6 +102,7 @@ def run_preprocessing_pipeline(
         enable_voxel_filter=enable_voxel_filter,
         enable_roi_filter=enable_roi_filter,
         enable_outlier_filter=enable_outlier_filter,
+        enable_ransac=enable_ransac,
         outlier_mean_k=outlier_mean_k,
         outlier_threshold=outlier_threshold,
     )

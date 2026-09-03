@@ -2,24 +2,24 @@
 from sensor_msgs.msg import PointCloud2
 from sensor_msgs_py import point_cloud2
 import numpy as np
+from scipy.spatial import cKDTree
 
 def statistical_outlier_removal(point_cloud : PointCloud2, meanK=30, threshold=2) -> PointCloud2:
     """
-    Removes points that are too far away from its neighbors.
-    Time Complexity: O(n^2)
+    Removes points that are far from their neighboring points using Statistical Outlier Removal (SOR).
+
+    Time Complexity: O(nlogn)
 
     Args:
-        point_cloud (PointCloud2): The cloud of points which will be filtered.
-        meank (int): number of neighbors to analyze
-        threshold (float): standard deviation threshold, how strict the filter is.
-            - Small: removes more points
-            - Large: removes less points
+        point_cloud (PointCloud2): Input point cloud to filter.
+        meanK (int): Number of nearest neighbors used to compute the averagedistance for each point.
+        threshold (float): Standard deviation multiplier used to decide outliers.
+            - Smaller value: removes more points.
+            - Larger value: removes fewer points.
 
     Returns:
-        PointCloud2: The filtered pointcloud.    
+        PointCloud2: Filtered point cloud with statistical outliers removed.
 
-    Note: This python version is fine as a prototype, but is O(n^2) because it builds all pairwise distances. 
-          For a dense LiDAR point cloud, it can get slow. Reason why native PCL/C++ is better long term.
     """
 
     field_names = ("x", "y", "z")
@@ -36,38 +36,26 @@ def statistical_outlier_removal(point_cloud : PointCloud2, meanK=30, threshold=2
     if len(points) <= meanK:
         return point_cloud
     
-     # Array to store average distance to the k nearest neighbors for each point
-    average_distances = np.empty(len(points), dtype=np.float32)
+    # Build KDTree for fast nearest-neighbor search
+    tree = cKDTree(points)
+    
+    # Query meanK + 1 because the nearest neighbor is the point itself
+    distances, _ = tree.query(points, k=meanK + 1)
 
-    for i in range(len(points)):
-        current_point = points[i]
+    # Remove distance to itself, which is column 0
+    neighbor_distances = distances[:, 1:]
 
-        # Compute distance from current point to every other point
-        # np.linalg.norm(...,axis=1) computes the length of each vector, which is the Euclidean distance.
-        distances = np.linalg.norm(points - current_point, axis=1)
+    average_distances = np.mean(neighbor_distances, axis=1)
 
-        # Ignore distance from the point to itself
-        distances[i] = np.inf
-
-        # Get the k nearest distances without fully sorting
-        nearest_distances = np.partition(distances, meanK)[:meanK]
-
-        # Get the distances to the k nearest neighbors
-        average_distances[i] = np.mean(nearest_distances)
-
-    # Compute global mean and standard deviation
     global_mean = np.mean(average_distances)
     global_std = np.std(average_distances)
 
-    # Points above this threshold are considrered outliers
-    new_threshold = global_mean + (threshold * global_std)
+    distance_limit = global_mean + threshold * global_std
 
-    # Keep only points whose average distance is below the threshold
-    mask = average_distances <= new_threshold
-    filtered_cloud = points[mask]
+    mask = average_distances <= distance_limit
+    filtered_points = points[mask]
 
-    # Convert filtered points back into a PointCloud2 message
-    filtered_msg = point_cloud2.create_cloud_xyz32(point_cloud.header, filtered_cloud.tolist())
-
-    return filtered_msg
-
+    return point_cloud2.create_cloud_xyz32(
+        point_cloud.header,
+        filtered_points.tolist()
+    )
