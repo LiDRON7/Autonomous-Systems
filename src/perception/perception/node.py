@@ -11,7 +11,7 @@ from std_msgs.msg import Bool, Float32, String
 
 from .depth import minimum_depth
 from .filters import preprocess_landing_cloud
-from .landing import LandingLimits, assess_landing_zone
+from .landing import LandingLimits, evaluate_landing_zone
 
 
 class PerceptionNode(Node):
@@ -30,10 +30,14 @@ class PerceptionNode(Node):
         self.declare_parameter("filters.voxel_size_m", 0.03)
         self.declare_parameter("filters.outlier_mean_k", 50)
         self.declare_parameter("filters.outlier_threshold", 3.0)
+        self.declare_parameter("ransac.dist_threshold", 0.2)
+        self.declare_parameter("ransac.num_iterations", 100)
 
         self.distance_pub = self.create_publisher(Float32, "/perception/obstacle_distance", 10)
         self.detected_pub = self.create_publisher(Bool, "/perception/obstacle_detected", 10)
         self.landing_pub = self.create_publisher(String, "/landing/assessment", 10)
+        self.ground_pub = self.create_publisher(PointCloud2, "/landing/ground_points", 10)
+        self.non_ground_pub = self.create_publisher(PointCloud2, "/landing/non_ground_points", 10)
         self.create_subscription(
             Image, str(self.get_parameter("depth_topic").value), self._on_depth, 10
         )
@@ -73,6 +77,8 @@ class PerceptionNode(Node):
             max_roughness_m=float(self.get_parameter("landing.max_roughness_m").value),
             obstacle_height_m=float(self.get_parameter("landing.obstacle_height_m").value),
             clearance_m=float(self.get_parameter("landing.clearance_m").value),
+            ransac_dist_threshold=float(self.get_parameter("ransac.dist_threshold").value),
+            ransac_num_iterations=int(self.get_parameter("ransac.num_iterations").value),
         )
         filtered = preprocess_landing_cloud(
             points,
@@ -80,10 +86,19 @@ class PerceptionNode(Node):
             mean_k=int(self.get_parameter("filters.outlier_mean_k").value),
             threshold=float(self.get_parameter("filters.outlier_threshold").value),
         )
-        assessment = assess_landing_zone(filtered, limits)
-        payload = assessment.as_dict() | {
+        evaluation = evaluate_landing_zone(filtered, limits)
+        # Preserve the source frame and timestamp for RViz and cloud alignment.
+        self.ground_pub.publish(point_cloud2.create_cloud_xyz32(
+            msg.header, evaluation.ground_points.tolist()
+        ))
+        self.non_ground_pub.publish(point_cloud2.create_cloud_xyz32(
+            msg.header, evaluation.non_ground_points.tolist()
+        ))
+        payload = evaluation.assessment.as_dict() | {
             "input_points": len(points),
             "filtered_points": len(filtered),
+            "ground_points": len(evaluation.ground_points),
+            "non_ground_points": len(evaluation.non_ground_points),
             "stamp_ns": self.get_clock().now().nanoseconds,
             "frame_id": msg.header.frame_id,
         }

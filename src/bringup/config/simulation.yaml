@@ -17,6 +17,8 @@ perception:
     filters.voxel_size_m: 0.03
     filters.outlier_mean_k: 50
     filters.outlier_threshold: 3.0
+    ransac.dist_threshold: 0.2
+    ransac.num_iterations: 100
 
 mission:
   ros__parameters:
