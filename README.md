@@ -156,6 +156,10 @@ Processes camera and LiDAR data. The LiDAR pipeline removes invalid points,
 downsamples the cloud with 0.03 m voxels, removes statistical outliers with a
 KD-tree, and evaluates the landing surface.
 
+Inside the landing footprint, RANSAC selects ground inliers and SVD refines
+their plane. Slope and ground roughness use these inliers. All preprocessed
+points remain available for obstacle-height and clearance checks.
+
 Inputs:
 
 | Topic | Type | Purpose |
@@ -170,6 +174,8 @@ Outputs:
 | `/perception/obstacle_detected` | `std_msgs/msg/Bool` | Immediate obstacle warning |
 | `/perception/obstacle_distance` | `std_msgs/msg/Float32` | Closest valid depth measurement |
 | `/landing/assessment` | `std_msgs/msg/String` | Landing result and quality measurements as JSON |
+| `/landing/ground_points` | `sensor_msgs/msg/PointCloud2` | RANSAC ground inliers inside the landing footprint |
+| `/landing/non_ground_points` | `sensor_msgs/msg/PointCloud2` | Remaining filtered points, including points outside the footprint |
 
 ### `navigation`
 
@@ -404,6 +410,35 @@ planning, coordinate conversion, and mission-state safety.
 | --- | --- |
 | `src/bringup/config/simulation.yaml` | Gazebo and PX4 SITL |
 | `src/bringup/config/hardware.yaml` | Physical drone |
+
+The perception node exposes the standalone RANSAC settings:
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `ransac.dist_threshold` | `0.2` | Maximum perpendicular distance to a candidate plane, in meters |
+| `ransac.num_iterations` | `100` | Number of random three-point plane candidates |
+
+The existing `landing.min_points` also sets the minimum RANSAC inlier count.
+An insufficient footprint still returns `insufficient_ground_points`; failure
+to establish a plane returns `ground_plane_not_found`. SVD only refines the
+selected inliers. `point_count` remains the footprint count; the assessment
+also includes `ground_points` and `non_ground_points` counts.
+
+The NumPy RANSAC implementation uses the earlier standalone implementation's
+parameter names and defaults without adding an Open3D dependency. Sampling
+uses a fixed seed for repeatable results on identical inputs. The 0.2 m
+distance threshold is separate from the ground roughness limit; tune it using
+sensor and surface data rather than interpreting every inlier as a safe point.
+
+To view the segmentation in RViz, add PointCloud2 displays for
+`/landing/ground_points` and `/landing/non_ground_points`. Use the LiDAR
+frame as the Fixed Frame, or a frame with a valid transform to it. Both
+clouds preserve the input timestamp and frame.
+
+Gazebo validation for flat and raised-obstacle scenes, assessment output,
+and RViz screenshots are still pending for issue #55. The ROS integration
+tests in `src/perception/test/test_perception_node.py` require a sourced
+ROS 2 environment and skip when ROS 2 is unavailable.
 
 Restart the autonomy container after changing parameters:
 
