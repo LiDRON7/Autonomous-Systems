@@ -153,7 +153,8 @@ Defines the destination services used by `navigation`:
 ### `perception`
 
 Processes camera and LiDAR data. The LiDAR pipeline removes invalid points,
-downsamples the cloud with 0.03 m voxels, removes statistical outliers with a
+applies a configurable XYZ pass-through filter, downsamples the cloud with
+0.03 m voxels, removes statistical outliers with a
 KD-tree, and evaluates the landing surface.
 
 Inside the landing footprint, RANSAC selects ground inliers and SVD refines
@@ -410,6 +411,24 @@ planning, coordinate conversion, and mission-state safety.
 | --- | --- |
 | `src/bringup/config/simulation.yaml` | Gazebo and PX4 SITL |
 | `src/bringup/config/hardware.yaml` | Physical drone |
+
+The pass-through filter runs before voxel downsampling and statistical outlier
+removal. All later stages consume that filtered result. Bounds are inclusive
+and expressed in the incoming LiDAR frame, in meters:
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `roi.x_min`, `roi.x_max` | `-10.0`, `10.0` | X processing bounds |
+| `roi.y_min`, `roi.y_max` | `-10.0`, `10.0` | Y processing bounds |
+| `roi.z_enabled` | `false` | Apply the configured Z bounds when enabled |
+| `roi.z_min`, `roi.z_max` | `-10.0`, `10.0` | Z bounds, used only when Z cropping is enabled |
+
+Z cropping is disabled by default so it does not remove ground based on an
+unverified sensor orientation or flight height. Validate those conditions
+before enabling it. The pass-through region is broader than the landing
+footprint: XY limits must contain both the footprint and the clearance area.
+Invalid bounds fail startup or are rejected during ROS parameter updates.
+This validation also applies when changing the footprint or clearance size.
 
 The perception node exposes the standalone RANSAC settings:
 

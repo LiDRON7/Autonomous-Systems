@@ -17,6 +17,14 @@ perception:
     filters.voxel_size_m: 0.03
     filters.outlier_mean_k: 50
     filters.outlier_threshold: 3.0
+    roi.x_min: -10.0
+    roi.x_max: 10.0
+    roi.y_min: -10.0
+    roi.y_max: 10.0
+    # Enable Z cropping only after checking the LiDAR frame and ground height.
+    roi.z_enabled: false
+    roi.z_min: -10.0
+    roi.z_max: 10.0
     ransac.dist_threshold: 0.2
     ransac.num_iterations: 100
 
