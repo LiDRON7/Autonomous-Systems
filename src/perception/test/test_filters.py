@@ -1,6 +1,9 @@
 import numpy as np
+import pytest
 from perception.filters import (
+    PassThroughBounds,
     finite_points,
+    passthrough_filter,
     preprocess_landing_cloud,
     statistical_outlier_removal,
     voxel_downsample,
@@ -38,3 +41,61 @@ def test_pipeline_applies_voxel_and_sor_filters():
     points = np.vstack([cluster, [4.0, 4.0, 4.0]])
     result = preprocess_landing_cloud(points, voxel_size_m=0.03, mean_k=3, threshold=1.0)
     assert len(result) < len(points)
+
+
+def test_passthrough_uses_inclusive_xyz_bounds():
+    bounds = PassThroughBounds(-1, 1, -2, 2, -3, 3)
+    points = np.array([
+        [-1, -2, -3], [1, 2, 3], [0, 0, 0],
+        [-1.1, 0, 0], [1.1, 0, 0], [0, -2.1, 0],
+        [0, 2.1, 0], [0, 0, -3.1], [0, 0, 3.1], [np.nan, 0, 0],
+    ])
+    np.testing.assert_array_equal(passthrough_filter(points, bounds), points[:3])
+
+
+def test_passthrough_defaults_do_not_crop_ground_by_height():
+    points = np.array([[0, 0, -50], [0, 0, 50], [11, 0, 0]])
+    np.testing.assert_array_equal(passthrough_filter(points), points[:2])
+
+
+@pytest.mark.parametrize("points", [[], [[20, 0, 0]], [[np.inf, 0, 0]]])
+def test_passthrough_empty_result_has_xyz_shape(points):
+    assert passthrough_filter(np.array(points)).shape == (0, 3)
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"x_min": 2, "x_max": 1}, {"y_min": float("nan")},
+    {"z_min": 2, "z_max": 1}, {"z_min": float("inf")},
+])
+def test_passthrough_rejects_invalid_bounds(kwargs):
+    with pytest.raises(ValueError):
+        PassThroughBounds(**kwargs)
+
+
+def test_roi_must_cover_footprint_and_clearance():
+    with pytest.raises(ValueError):
+        PassThroughBounds(x_min=-0.6).validate_landing_area(1.2, 0.75)
+    with pytest.raises(ValueError):
+        PassThroughBounds(y_max=0.9).validate_landing_area(2.0, 0.75)
+    PassThroughBounds(-1, 1, -1, 1).validate_landing_area(1.5, 1.0)
+
+
+def test_pipeline_crops_before_voxel_selection():
+    # Both points share a voxel; cropping first must retain the inside point.
+    points = np.array([[0.051, 0, 0], [0.049, 0, 0]])
+    result = preprocess_landing_cloud(
+        points, voxel_size_m=0.1, roi=PassThroughBounds(x_max=0.05),
+    )
+    np.testing.assert_allclose(result, [[0.049, 0, 0]])
+
+
+def test_roi_retains_clearance_obstacle_outside_landing_footprint():
+    from perception.landing import evaluate_landing_zone
+
+    axis = np.linspace(-0.5, 0.5, 20)
+    ground = np.array([(x, y, 0) for x in axis for y in axis])
+    cloud = np.vstack([ground, [0.65, 0, 0.5], [20, 0, 0]])
+    filtered = preprocess_landing_cloud(cloud, mean_k=1000, roi=PassThroughBounds())
+    result = evaluate_landing_zone(filtered)
+    assert result.assessment.reason == "obstacle_inside_clearance"
+    np.testing.assert_allclose(result.non_ground_points, [[0.65, 0, 0.5]])

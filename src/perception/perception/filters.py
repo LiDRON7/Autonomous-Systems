@@ -1,13 +1,54 @@
 """Point-cloud filters used before landing-zone evaluation."""
 
+from dataclasses import dataclass
+
 import numpy as np
 from scipy.spatial import cKDTree
+
+
+@dataclass(frozen=True)
+class PassThroughBounds:
+    """Inclusive limits in the input cloud frame; Z is unbounded by default."""
+
+    x_min: float = -10.0
+    x_max: float = 10.0
+    y_min: float = -10.0
+    y_max: float = 10.0
+    z_min: float = -float("inf")
+    z_max: float = float("inf")
+
+    def __post_init__(self) -> None:
+        for axis in ("x", "y", "z"):
+            low, high = getattr(self, f"{axis}_min"), getattr(self, f"{axis}_max")
+            if np.isnan(low) or np.isnan(high) or low > high or low == np.inf or high == -np.inf:
+                raise ValueError(f"invalid ROI bounds for {axis}")
+
+    def validate_landing_area(self, footprint_m: float, clearance_m: float) -> None:
+        """Prevent an XY crop from removing required landing/clearance data."""
+        if not np.isfinite(footprint_m) or not np.isfinite(clearance_m):
+            raise ValueError("landing footprint and clearance must be finite")
+        if footprint_m <= 0.0 or clearance_m < 0.0:
+            raise ValueError("landing footprint must be positive and clearance non-negative")
+        extent = max(footprint_m / 2.0, clearance_m)
+        if self.x_min > -extent or self.x_max < extent or self.y_min > -extent or self.y_max < extent:
+            raise ValueError("ROI must contain the landing footprint and clearance area")
 
 
 def finite_points(points: np.ndarray) -> np.ndarray:
     """Return only finite XYZ points."""
     cloud = np.asarray(points, dtype=np.float32).reshape((-1, 3))
     return cloud[np.isfinite(cloud).all(axis=1)]
+
+
+def passthrough_filter(
+    points: np.ndarray, bounds: PassThroughBounds | None = None,
+) -> np.ndarray:
+    """Keep finite XYZ points inside the configured processing volume."""
+    bounds = bounds or PassThroughBounds()
+    cloud = finite_points(points)
+    lower = np.array([bounds.x_min, bounds.y_min, bounds.z_min])
+    upper = np.array([bounds.x_max, bounds.y_max, bounds.z_max])
+    return cloud[((cloud >= lower) & (cloud <= upper)).all(axis=1)]
 
 
 def voxel_downsample(points: np.ndarray, voxel_size_m: float = 0.03) -> np.ndarray:
@@ -40,7 +81,9 @@ def preprocess_landing_cloud(
     voxel_size_m: float = 0.03,
     mean_k: int = 50,
     threshold: float = 3.0,
+    roi: PassThroughBounds | None = None,
 ) -> np.ndarray:
-    """Apply finite-value, voxel, and statistical-outlier filters."""
-    downsampled = voxel_downsample(points, voxel_size_m)
+    """Apply finite-value, pass-through, voxel, and statistical-outlier filters."""
+    cropped = passthrough_filter(points, roi)
+    downsampled = voxel_downsample(cropped, voxel_size_m)
     return statistical_outlier_removal(downsampled, mean_k, threshold)
