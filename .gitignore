@@ -6,3 +6,5 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .vscode
+.autonomy_build_environment
+.autonomy_build_environment.pending
