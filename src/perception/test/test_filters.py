@@ -94,8 +94,8 @@ def test_roi_retains_clearance_obstacle_outside_landing_footprint():
 
     axis = np.linspace(-0.5, 0.5, 20)
     ground = np.array([(x, y, 0) for x in axis for y in axis])
-    cloud = np.vstack([ground, [0.65, 0, 0.5], [20, 0, 0]])
+    cloud = np.vstack([ground, [0.65, 0, -0.5], [20, 0, 0]])
     filtered = preprocess_landing_cloud(cloud, mean_k=1000, roi=PassThroughBounds())
     result = evaluate_landing_zone(filtered)
     assert result.assessment.reason == "obstacle_inside_clearance"
-    np.testing.assert_allclose(result.non_ground_points, [[0.65, 0, 0.5]])
+    np.testing.assert_allclose(result.non_ground_points, [[0.65, 0, -0.5]])

@@ -26,11 +26,18 @@ def test_rejects_steep_surface():
     assert result.reason == "slope_too_high"
 
 
-def test_rejects_nearby_obstacle():
-    points = np.vstack([flat_plane(), [0.2, 0.2, 0.5]])
+def test_rejects_nearby_obstacle_above_ground_in_z_down_frame():
+    points = np.vstack([flat_plane(z=0.2), [0.2, 0.2, -0.3]])
     result = assess_landing_zone(points, LIMITS)
     assert not result.suitable
     assert result.reason == "obstacle_inside_clearance"
+
+
+def test_ignores_point_below_ground_in_z_down_frame():
+    points = np.vstack([flat_plane(z=0.2), [0.2, 0.2, 0.7]])
+    result = assess_landing_zone(points, LIMITS)
+    assert result.suitable
+    assert result.reason == "safe"
 
 
 def test_rejects_sparse_cloud():
@@ -41,8 +48,14 @@ def test_rejects_sparse_cloud():
 
 def test_rejects_rough_surface():
     points = flat_plane()
-    points[::2, 2] = 0.2
-    result = assess_landing_zone(points, LIMITS)
+    points[::2, 2] = -0.12
+    points[1::2, 2] = 0.12
+    limits = LandingLimits(
+        min_points=25,
+        max_slope_deg=90.0,
+        ransac_dist_threshold=0.20,
+    )
+    result = assess_landing_zone(points, limits)
     assert not result.suitable
     assert result.reason == "surface_too_rough"
 
@@ -54,7 +67,7 @@ def test_ignores_non_finite_points():
 
 
 def test_refines_only_ground_inliers_but_keeps_obstacles():
-    obstacles = np.array([(0.3, y, 0.7) for y in np.linspace(-0.3, 0.3, 20)])
+    obstacles = np.array([(0.3, y, -0.7) for y in np.linspace(-0.3, 0.3, 20)])
     points = np.vstack([flat_plane(), obstacles])
     result = evaluate_landing_zone(points, LandingLimits(ransac_dist_threshold=0.03))
     assert result.assessment.reason == "obstacle_inside_clearance"
@@ -65,8 +78,8 @@ def test_refines_only_ground_inliers_but_keeps_obstacles():
 
 
 def test_selects_footprint_before_ransac_and_preserves_outside_points():
-    outside = np.array([(1.0, y, 1.0) for y in np.linspace(-2, 2, 200)])
-    nearby = np.array([[0.65, 0.0, 0.5]])
+    outside = np.array([(1.0, y, -1.0) for y in np.linspace(-2, 2, 200)])
+    nearby = np.array([[0.65, 0.0, -0.5]])
     result = evaluate_landing_zone(np.vstack([flat_plane(), outside, nearby]), LIMITS)
     assert result.assessment.reason == "obstacle_inside_clearance"
     assert result.assessment.point_count == 100
@@ -91,18 +104,34 @@ def test_ransac_failure_assessment_is_valid_json():
 
 
 def test_roughness_uses_only_ground_inliers():
-    # Low outliers do not count as ground roughness or raised obstacles.
-    points = np.vstack([flat_plane(), [[0.2, y, -0.5] for y in np.linspace(-0.4, 0.4, 20)]])
+    # Points physically below ground do not count as roughness or raised obstacles.
+    points = np.vstack([flat_plane(), [[0.2, y, 0.5] for y in np.linspace(-0.4, 0.4, 20)]])
     result = assess_landing_zone(points, LandingLimits(ransac_dist_threshold=0.03))
     assert result.suitable
     assert result.roughness_m < 0.001
+
+
+def test_self_returns_do_not_inflate_ground_roughness():
+    ground = flat_plane(z=0.2)
+    self_returns = np.array(
+        [
+            (x, y, -0.05)
+            for x in np.linspace(-0.18, 0.18, 5)
+            for y in np.linspace(-0.18, 0.18, 8)
+        ]
+    )
+    result = evaluate_landing_zone(np.vstack([ground, self_returns]), LIMITS)
+    assert result.assessment.reason == "obstacle_inside_clearance"
+    assert result.assessment.roughness_m < 0.001
+    assert len(result.ground_points) == len(ground)
+    assert len(result.non_ground_points) == len(self_returns)
 
 
 def test_preprocessing_and_ransac_keep_raised_cluster_for_clearance():
     axis = np.linspace(-0.5, 0.5, 20)
     ground = np.array([(x, y, 0.0) for x in axis for y in axis])
     cluster_axis = np.linspace(0.1, 0.3, 6)
-    raised = np.array([(x, y, 0.5) for x in cluster_axis for y in cluster_axis])
+    raised = np.array([(x, y, -0.5) for x in cluster_axis for y in cluster_axis])
     filtered = preprocess_landing_cloud(np.vstack([ground, raised]))
     result = evaluate_landing_zone(filtered)
     assert result.assessment.reason == "obstacle_inside_clearance"

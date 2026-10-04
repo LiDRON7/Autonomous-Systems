@@ -38,8 +38,8 @@ class PerceptionNode(Node):
         self.declare_parameter("roi.z_enabled", False)
         self.declare_parameter("roi.z_min", -10.0)
         self.declare_parameter("roi.z_max", 10.0)
-        self.declare_parameter("ransac.dist_threshold", 0.2)
-        self.declare_parameter("ransac.num_iterations", 100)
+        self.declare_parameter("ransac.dist_threshold", 0.01)
+        self.declare_parameter("ransac.num_iterations", 500)
         self._landing_roi()  # Validate parameter-file overrides before subscribing.
         self.add_on_set_parameters_callback(self._validate_roi_parameters)
 

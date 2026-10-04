@@ -25,8 +25,8 @@ perception:
     roi.z_enabled: false
     roi.z_min: -10.0
     roi.z_max: 10.0
-    ransac.dist_threshold: 0.2
-    ransac.num_iterations: 100
+    ransac.dist_threshold: 0.01
+    ransac.num_iterations: 500
 
 mission:
   ros__parameters:

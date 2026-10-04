@@ -49,7 +49,7 @@ def test_lidar_topics_publish_assessment_and_partition(scenario, reason):
         axis = np.linspace(-0.5, 0.5, 20)
         points = np.array([(x, y, 0.0) for x in axis for y in axis])
         if scenario == "raised":
-            points = np.vstack([points, [[0.2, 0.2, 0.5], [0.3, 0.2, 0.5]]])
+            points = np.vstack([points, [[0.2, 0.2, -0.5], [0.3, 0.2, -0.5]]])
         elif scenario == "degenerate":
             points = np.array([(x, 0.0, 0.0) for x in np.linspace(-0.5, 0.5, 100)])
             # Retain enough collinear points to reach RANSAC.
