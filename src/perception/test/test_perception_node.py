@@ -19,6 +19,7 @@ from perception.node import PerceptionNode
 @pytest.mark.parametrize("scenario,reason", [
     ("flat", "safe"),
     ("raised", "obstacle_inside_clearance"),
+    ("self_filtered", "safe"),
     ("degenerate", "ground_plane_not_found"),
     ("cropped", "safe"),
 ])
@@ -50,6 +51,11 @@ def test_lidar_topics_publish_assessment_and_partition(scenario, reason):
         points = np.array([(x, y, 0.0) for x in axis for y in axis])
         if scenario == "raised":
             points = np.vstack([points, [[0.2, 0.2, -0.5], [0.3, 0.2, -0.5]]])
+        elif scenario == "self_filtered":
+            points = np.vstack([points, [[0.1, 0.1, -0.05], [0.2, 0.1, -0.05]]])
+            assert perception.set_parameters_atomically([
+                Parameter("self_filter.enabled", value=True),
+            ]).successful
         elif scenario == "degenerate":
             points = np.array([(x, 0.0, 0.0) for x in np.linspace(-0.5, 0.5, 100)])
             # Retain enough collinear points to reach RANSAC.
@@ -72,7 +78,8 @@ def test_lidar_topics_publish_assessment_and_partition(scenario, reason):
         assessment = json.loads(received["assessment"].data)
         assert assessment["reason"] == reason
         assert assessment["suitable"] == (reason == "safe")
-        expected_count = len(points) - (3 if scenario == "cropped" else 0)
+        removed = 3 if scenario == "cropped" else 2 if scenario == "self_filtered" else 0
+        expected_count = len(points) - removed
         assert assessment["input_points"] == len(points)
         assert assessment["filtered_points"] == expected_count
         assert assessment["ground_points"] + assessment["non_ground_points"] == expected_count
@@ -116,6 +123,22 @@ def test_roi_parameter_updates_preserve_required_landing_area():
             Parameter("landing.footprint_m", value=30.0),
         ])
         assert result.successful
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+def test_self_filter_parameter_updates_validate_bounds():
+    rclpy.init()
+    node = PerceptionNode()
+    try:
+        result = node.set_parameters_atomically([
+            Parameter("self_filter.enabled", value=True),
+            Parameter("self_filter.x_min", value=1.0),
+            Parameter("self_filter.x_max", value=-1.0),
+        ])
+        assert not result.successful
+        assert not node.get_parameter("self_filter.enabled").value
     finally:
         node.destroy_node()
         rclpy.shutdown()

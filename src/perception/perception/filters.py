@@ -46,9 +46,22 @@ def passthrough_filter(
     """Keep finite XYZ points inside the configured processing volume."""
     bounds = bounds or PassThroughBounds()
     cloud = finite_points(points)
-    lower = np.array([bounds.x_min, bounds.y_min, bounds.z_min])
-    upper = np.array([bounds.x_max, bounds.y_max, bounds.z_max])
+    lower = np.array([bounds.x_min, bounds.y_min, bounds.z_min], dtype=cloud.dtype)
+    upper = np.array([bounds.x_max, bounds.y_max, bounds.z_max], dtype=cloud.dtype)
     return cloud[((cloud >= lower) & (cloud <= upper)).all(axis=1)]
+
+
+def exclude_box(
+    points: np.ndarray, bounds: PassThroughBounds | None = None,
+) -> np.ndarray:
+    """Remove finite XYZ points inside an inclusive axis-aligned box."""
+    cloud = finite_points(points)
+    if bounds is None:
+        return cloud
+    lower = np.array([bounds.x_min, bounds.y_min, bounds.z_min], dtype=cloud.dtype)
+    upper = np.array([bounds.x_max, bounds.y_max, bounds.z_max], dtype=cloud.dtype)
+    inside = ((cloud >= lower) & (cloud <= upper)).all(axis=1)
+    return cloud[~inside]
 
 
 def voxel_downsample(points: np.ndarray, voxel_size_m: float = 0.03) -> np.ndarray:
@@ -82,8 +95,10 @@ def preprocess_landing_cloud(
     mean_k: int = 50,
     threshold: float = 3.0,
     roi: PassThroughBounds | None = None,
+    exclusion: PassThroughBounds | None = None,
 ) -> np.ndarray:
-    """Apply finite-value, pass-through, voxel, and statistical-outlier filters."""
+    """Apply finite, ROI, self-exclusion, voxel, and outlier filters."""
     cropped = passthrough_filter(points, roi)
-    downsampled = voxel_downsample(cropped, voxel_size_m)
+    self_filtered = exclude_box(cropped, exclusion)
+    downsampled = voxel_downsample(self_filtered, voxel_size_m)
     return statistical_outlier_removal(downsampled, mean_k, threshold)

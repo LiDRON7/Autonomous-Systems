@@ -25,6 +25,14 @@ perception:
     roi.z_enabled: false
     roi.z_min: -10.0
     roi.z_max: 10.0
+    # Enable only after measuring the physical vehicle in its LiDAR frame.
+    self_filter.enabled: false
+    self_filter.x_min: -0.22
+    self_filter.x_max: 0.22
+    self_filter.y_min: -0.22
+    self_filter.y_max: 0.22
+    self_filter.z_min: -0.08
+    self_filter.z_max: -0.02
     ransac.dist_threshold: 0.01
     ransac.num_iterations: 500
 

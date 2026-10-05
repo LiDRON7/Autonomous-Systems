@@ -1,7 +1,7 @@
 import json
 
 import numpy as np
-from perception.filters import preprocess_landing_cloud
+from perception.filters import PassThroughBounds, preprocess_landing_cloud
 from perception.landing import LandingLimits, assess_landing_zone, evaluate_landing_zone
 
 LIMITS = LandingLimits(min_points=25)
@@ -125,6 +125,26 @@ def test_self_returns_do_not_inflate_ground_roughness():
     assert result.assessment.roughness_m < 0.001
     assert len(result.ground_points) == len(ground)
     assert len(result.non_ground_points) == len(self_returns)
+
+
+def test_self_filter_removes_uav_returns_before_landing_assessment():
+    ground = flat_plane(z=0.2)
+    self_returns = np.array(
+        [
+            (x, y, -0.05)
+            for x in np.linspace(-0.18, 0.18, 5)
+            for y in np.linspace(-0.18, 0.18, 8)
+        ]
+    )
+    filtered = preprocess_landing_cloud(
+        np.vstack([ground, self_returns]),
+        mean_k=1000,
+        exclusion=PassThroughBounds(-0.22, 0.22, -0.22, 0.22, -0.08, -0.02),
+    )
+    result = evaluate_landing_zone(filtered, LIMITS)
+    assert result.assessment.reason == "safe"
+    assert result.assessment.roughness_m < 0.001
+    assert len(result.ground_points) == len(ground)
 
 
 def test_preprocessing_and_ransac_keep_raised_cluster_for_clearance():

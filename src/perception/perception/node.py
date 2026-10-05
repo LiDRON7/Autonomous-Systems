@@ -38,10 +38,18 @@ class PerceptionNode(Node):
         self.declare_parameter("roi.z_enabled", False)
         self.declare_parameter("roi.z_min", -10.0)
         self.declare_parameter("roi.z_max", 10.0)
+        self.declare_parameter("self_filter.enabled", False)
+        self.declare_parameter("self_filter.x_min", -0.22)
+        self.declare_parameter("self_filter.x_max", 0.22)
+        self.declare_parameter("self_filter.y_min", -0.22)
+        self.declare_parameter("self_filter.y_max", 0.22)
+        self.declare_parameter("self_filter.z_min", -0.08)
+        self.declare_parameter("self_filter.z_max", -0.02)
         self.declare_parameter("ransac.dist_threshold", 0.01)
         self.declare_parameter("ransac.num_iterations", 500)
         self._landing_roi()  # Validate parameter-file overrides before subscribing.
-        self.add_on_set_parameters_callback(self._validate_roi_parameters)
+        self._self_filter()
+        self.add_on_set_parameters_callback(self._validate_filter_parameters)
 
         self.distance_pub = self.create_publisher(Float32, "/perception/obstacle_distance", 10)
         self.detected_pub = self.create_publisher(Bool, "/perception/obstacle_detected", 10)
@@ -74,9 +82,27 @@ class PerceptionNode(Node):
         )
         return roi
 
-    def _validate_roi_parameters(self, parameters) -> SetParametersResult:
+    def _self_filter(self, overrides: dict | None = None) -> PassThroughBounds | None:
+        overrides = overrides or {}
+
+        def value(name):
+            if name in overrides:
+                return overrides[name]
+            else:
+                parameter = self.get_parameter(name)
+                return parameter.value
+
+        bounds = PassThroughBounds(**{
+            f"{axis}_{side}": float(value(f"self_filter.{axis}_{side}"))
+            for axis in ("x", "y", "z") for side in ("min", "max")
+        })
+        return bounds if value("self_filter.enabled") else None
+
+    def _validate_filter_parameters(self, parameters) -> SetParametersResult:
+        overrides = {parameter.name: parameter.value for parameter in parameters}
         try:
-            self._landing_roi({parameter.name: parameter.value for parameter in parameters})
+            self._landing_roi(overrides)
+            self._self_filter(overrides)
         except (TypeError, ValueError) as error:
             return SetParametersResult(successful=False, reason=str(error))
         return SetParametersResult(successful=True)
@@ -122,6 +148,7 @@ class PerceptionNode(Node):
             mean_k=int(self.get_parameter("filters.outlier_mean_k").value),
             threshold=float(self.get_parameter("filters.outlier_threshold").value),
             roi=self._landing_roi(),
+            exclusion=self._self_filter(),
         )
         evaluation = evaluate_landing_zone(filtered, limits)
         # Preserve the source frame and timestamp for RViz and cloud alignment.

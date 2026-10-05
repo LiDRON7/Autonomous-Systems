@@ -434,8 +434,8 @@ The perception node exposes the standalone RANSAC settings:
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `ransac.dist_threshold` | `0.2` | Maximum perpendicular distance to a candidate plane, in meters |
-| `ransac.num_iterations` | `100` | Number of random three-point plane candidates |
+| `ransac.dist_threshold` | `0.01` | Maximum perpendicular distance to a candidate plane, in meters |
+| `ransac.num_iterations` | `500` | Number of random three-point plane candidates |
 
 The existing `landing.min_points` also sets the minimum RANSAC inlier count.
 An insufficient footprint still returns `insufficient_ground_points`; failure
@@ -443,11 +443,20 @@ to establish a plane returns `ground_plane_not_found`. SVD only refines the
 selected inliers. `point_count` remains the footprint count; the assessment
 also includes `ground_points` and `non_ground_points` counts.
 
-The NumPy RANSAC implementation uses the earlier standalone implementation's
-parameter names and defaults without adding an Open3D dependency. Sampling
-uses a fixed seed for repeatable results on identical inputs. The 0.2 m
-distance threshold is separate from the ground roughness limit; tune it using
-sensor and surface data rather than interpreting every inlier as a safe point.
+The NumPy RANSAC implementation avoids an Open3D dependency. Sampling uses a fixed seed for repeatable results on identical inputs. Tune the distance threshold using sensor and surface data rather than interpreting every inlier
+as a safe point.
+
+Simulation also enables a sensor-frame self-filter before voxel downsampling:
+
+| Parameter | Simulation default | Meaning |
+| --- | --- | --- |
+| `self_filter.enabled` | `true` | Remove points inside the configured box |
+| `self_filter.x_min`, `self_filter.x_max` | `-0.22`, `0.22` | X bounds in meters |
+| `self_filter.y_min`, `self_filter.y_max` | `-0.22`, `0.22` | Y bounds in meters |
+| `self_filter.z_min`, `self_filter.z_max` | `-0.08`, `-0.02` | Z bounds in meters |
+
+These bounds cover the x500 returns measured in Gazebo. The hardware profile
+keeps the self-filter disabled until the physical vehicle is measured in its LiDAR frame.
 
 To view the segmentation in RViz, add PointCloud2 displays for
 `/landing/ground_points` and `/landing/non_ground_points`. Use the LiDAR
