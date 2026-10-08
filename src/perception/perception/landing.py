@@ -15,8 +15,8 @@ class LandingLimits:
     max_roughness_m: float = 0.08
     obstacle_height_m: float = 0.20
     clearance_m: float = 0.75
-    ransac_dist_threshold: float = 0.2
-    ransac_num_iterations: int = 100
+    ransac_dist_threshold: float = 0.01
+    ransac_num_iterations: int = 500
 
 
 @dataclass(frozen=True)
@@ -102,8 +102,10 @@ def evaluate_landing_zone(
     if roughness > limits.max_roughness_m:
         return result(LandingAssessment(False, "surface_too_rough", count, slope, roughness))
 
+    # The downward-facing Gazebo LiDAR is Z-down. Points physically above the
+    # ground therefore have a smaller Z coordinate and a negative signed height.
     heights = (cloud - center) @ normal
-    raised = cloud[heights > limits.obstacle_height_m]
+    raised = cloud[heights < -limits.obstacle_height_m]
     clear_radius = -1.0
     if len(raised):
         clear_radius = float(np.min(np.linalg.norm(raised[:, :2], axis=1)))
