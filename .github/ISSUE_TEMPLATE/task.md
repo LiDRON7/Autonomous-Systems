@@ -1,35 +1,24 @@
 ---
-name: Feature Request
-about: Use this template to request or document a new feature
-title: "[Feature]: "
-labels: enhancement
-assignees: ""
+name: Task
+about: Describe a task linked to a user story
+title: "[Task] "
+labels: task
 ---
 
-# Title  
-<!-- Short, clear summary of the task -->  
-Example: Implement Accessibility Testing for the Login & Sign-Up Process  
+## Related user story
 
----
+Paste the story issue link and add this task as a sub-issue of that story.
 
-## Objective  
-<!-- What is the main goal of this issue? Why is it needed? -->  
-Example: Ensure login and sign-up pages are accessible to all users by validating compliance with WCAG standards.  
+## Work to do
 
----
+What specific action needs to be completed?
 
-## Description  
-<!-- Detailed explanation of what needs to be done. Include requirements if possible. -->  
-- UI elements must be properly labeled and accessible via screen readers.  
-- Forms should be fully navigable via keyboard.  
-- Maintain proper contrast ratios and color usage.  
-- Error messages and status updates must be conveyed to assistive technology.  
+## System test instructions
 
----
+1. Set up or launch the system:
+2. Perform these steps:
+3. Expected result:
 
+## Done when
 
-## Test Instructions
-<!-- How to test, dont say things like, code passes pipeline and no syntax errors; actual instructions on how to test this fits into the system -->  
-
----
-
+What result or evidence will show this task is complete?
