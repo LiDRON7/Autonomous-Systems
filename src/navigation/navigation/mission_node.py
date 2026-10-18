@@ -233,28 +233,61 @@ class MissionNode(Node):
                 self.landing_confirmations + 1 if self.landing_suitable else 0
             )
 
+
     def _on_depth_points(self, msg: PointCloud2) -> None:
         if self.position is None:
             return
-        raw = point_cloud2.read_points_numpy(msg, field_names=("x", "y", "z"))
+
+        # Read OAK-D point cloud (FLU: X=Forward, Y=Left, Z=Up)
+        raw = point_cloud2.read_points_numpy(
+            msg, field_names=("x", "y", "z")
+        )
         points = np.asarray(raw, dtype=float).reshape((-1, 3))
         points = points[np.isfinite(points).all(axis=1)]
+
+        valid_count = len(points)
+
+        # Filter by height (Z) and forward distance (X)
         low = float(self.get_parameter("map.min_height_m").value)
         high = float(self.get_parameter("map.max_height_m").value)
-        points = points[(points[:, 1] >= low) & (points[:, 1] <= high)]
-        cos_yaw, sin_yaw = math.cos(self.yaw), math.sin(self.yaw)
+
+        points = points[
+            (points[:, 2] >= low) &
+            (points[:, 2] <= high) &
+            (points[:, 0] > 0.2)
+        ]
+
+        filtered_count = len(points)
+
+        # Transform sensor-relative FLU to local NED coordinates
+        cos_yaw = math.cos(self.yaw)
+        sin_yaw = math.sin(self.yaw)
+
         world = [
             (
-                self.position[0] + cos_yaw * forward - sin_yaw * right,
-                self.position[1] + sin_yaw * forward + cos_yaw * right,
+                self.position[0] + cos_yaw * forward + sin_yaw * left,
+                self.position[1] + sin_yaw * forward - cos_yaw * left,
             )
-            for right, _vertical, forward in points
-            if forward > 0.2
+            for forward, left, _up in points
         ]
+
+        # Insert transformed obstacle points into rolling grid
         self.grid_origin = self.grid.origin_around(self.position[:2])
-        self.grid.observe(world, self.grid_origin, self._now())
-        self.stamps["depth"] = self._now()
+
+        now = self._now()
+        self.grid.observe(world, self.grid_origin, now)
+
+        self.stamps["depth"] = now
+
+        # Diagnostic logging for Issue #73
+        self.get_logger().info(
+            f"OAK-D mapping: valid={valid_count}, "
+            f"filtered={filtered_count}, "
+            f"occupied_cells={len(self.grid.occupied)}"
+        )
+
         self._publish_grid(msg.header.frame_id or "map")
+
 
     def _set_local(self, request, response):
         if self.state not in {MissionState.IDLE, MissionState.COMPLETE, MissionState.ABORT}:
