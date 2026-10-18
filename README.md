@@ -384,6 +384,19 @@ docker exec lidron_autonomy bash -c "
 
 ---
 
+## Automated Scenario Execution
+
+Run a configured mission, including startup and teardown, with:
+
+```bash
+python3 scripts/run_scenario.py scenarios/clear_path.json
+```
+
+See [the scenario testing guide](docs/scenario-testing.md) for requirements,
+expected results, failure tests, and the execution-status contract. Gazebo
+flight validation is pending; `COMPLETED` is an execution outcome, not a
+mission-validation PASS.
+
 ## Run Tests
 
 Start the stack first. Then run:

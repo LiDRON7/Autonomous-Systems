@@ -8,3 +8,4 @@ __pycache__/
 .vscode
 .autonomy_build_environment
 .autonomy_build_environment.pending
+results/

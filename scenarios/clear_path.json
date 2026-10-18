@@ -1,0 +1,17 @@
+{
+  "name": "clear_path",
+  "version": 1,
+  "environment": {"profile": "default", "obstacles": []},
+  "uav": {"start_mode": "default"},
+  "mission": {
+    "frame": "local_ned",
+    "destination": {"north": 8.0, "east": 0.0, "down": -5.0}
+  },
+  "timeouts": {"startup_s": 120, "mission_s": 300, "cleanup_s": 30},
+  "expected": {
+    "states": ["PREFLIGHT", "TAKEOFF", "PLANNING", "NAVIGATING", "APPROACH", "LANDING_CHECK", "LANDING", "COMPLETE"],
+    "forbidden_states": ["ABORT", "HOLD", "REPLANNING"],
+    "require_path": true,
+    "arrival_tolerance_m": 0.75
+  }
+}

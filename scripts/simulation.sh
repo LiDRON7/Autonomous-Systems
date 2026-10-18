@@ -100,6 +100,7 @@ case "${1:-up}" in
   prepare_workspace
   "${compose[@]}" up --build ;;
   down) "${compose[@]}" down ;;
+  running) "${compose[@]}" ps --status running -q ;;
   check) "${compose[@]}" config >/dev/null; echo "Simulation integration configuration is valid.";;
-  *) echo "Usage: $0 [up|down|check]" >&2; exit 2 ;;
+  *) echo "Usage: $0 [up|down|check|running]" >&2; exit 2 ;;
 esac
