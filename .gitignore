@@ -9,3 +9,4 @@ __pycache__/
 .autonomy_build_environment
 .autonomy_build_environment.pending
 results/
+.venv/

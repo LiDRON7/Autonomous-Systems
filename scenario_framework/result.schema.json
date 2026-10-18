@@ -1,0 +1,185 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "scenario_name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "verdict": {
+      "enum": [
+        "PASS",
+        "FAIL"
+      ]
+    },
+    "execution_status": {
+      "enum": [
+        "COMPLETED",
+        "TIMED_OUT",
+        "ERROR",
+        "CANCELLED"
+      ]
+    },
+    "reason": {
+      "enum": [
+        "NONE",
+        "EXPECTATION_FAILED",
+        "TIMEOUT",
+        "CONFIG_INVALID",
+        "INFRASTRUCTURE_ERROR",
+        "MONITOR_DATA_MISSING",
+        "SCENARIO_PRECONDITION_FAILED",
+        "CANCELLED",
+        "CLEANUP_ERROR"
+      ]
+    },
+    "phase": {
+      "enum": [
+        "config",
+        "startup",
+        "mission",
+        "validation",
+        "cleanup"
+      ]
+    },
+    "duration_s": {
+      "type": "number",
+      "minimum": 0
+    },
+    "cleanup_status": {
+      "enum": [
+        "COMPLETED",
+        "ERROR",
+        "NOT_REQUIRED"
+      ]
+    },
+    "original_outcome": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "reasons": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "enum": [
+              "NONE",
+              "EXPECTATION_FAILED",
+              "TIMEOUT",
+              "CONFIG_INVALID",
+              "INFRASTRUCTURE_ERROR",
+              "MONITOR_DATA_MISSING",
+              "SCENARIO_PRECONDITION_FAILED",
+              "CANCELLED",
+              "CLEANUP_ERROR"
+            ]
+          },
+          "phase": {
+            "enum": [
+              "config",
+              "startup",
+              "mission",
+              "validation",
+              "cleanup"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "phase"
+        ]
+      }
+    },
+    "start_utc": {
+      "type": "string"
+    },
+    "source_commits": {
+      "type": "object",
+      "properties": {
+        "autonomous_systems": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "simulation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "autonomous_systems",
+        "simulation"
+      ]
+    },
+    "configuration_sha256": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "expectation_checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "passed": {
+            "type": "boolean"
+          },
+          "evidence_seq": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "required": [
+          "name",
+          "passed",
+          "evidence_seq"
+        ]
+      }
+    },
+    "artifact_paths": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "scenario_name",
+    "verdict",
+    "execution_status",
+    "reason",
+    "phase",
+    "duration_s",
+    "cleanup_status",
+    "original_outcome",
+    "reasons",
+    "start_utc",
+    "source_commits",
+    "configuration_sha256",
+    "expectation_checks",
+    "artifact_paths"
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

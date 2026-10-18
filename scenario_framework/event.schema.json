@@ -1,0 +1,301 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "elapsed_s": {
+      "type": "number",
+      "minimum": 0
+    },
+    "ros_time_s": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "source": {
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "state",
+        "path",
+        "position",
+        "obstacle",
+        "service_response",
+        "process_exit",
+        "trigger"
+      ]
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "seq",
+    "elapsed_s",
+    "ros_time_s",
+    "source",
+    "kind",
+    "payload"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "state"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "properties": {
+              "previous": {
+                "type": "string"
+              },
+              "current": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "previous",
+              "current"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "path"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "properties": {
+              "path_id": {
+                "type": "string"
+              },
+              "pose_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "frame_id": {
+                "type": "string"
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                }
+              }
+            },
+            "required": [
+              "path_id",
+              "pose_count",
+              "frame_id",
+              "points"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "position"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "properties": {
+              "north": {
+                "type": "number"
+              },
+              "east": {
+                "type": "number"
+              },
+              "down": {
+                "type": "number"
+              },
+              "frame_id": {
+                "type": "string"
+              },
+              "valid": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "north",
+              "east",
+              "down",
+              "frame_id",
+              "valid"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "obstacle"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "properties": {
+              "detected": {
+                "type": "boolean"
+              },
+              "distance_m": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "detected"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "service_response"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "properties": {
+              "service": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "accepted": {
+                "type": "boolean"
+              },
+              "success": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "service",
+              "message"
+            ],
+            "anyOf": [
+              {
+                "required": [
+                  "accepted"
+                ]
+              },
+              {
+                "required": [
+                  "success"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "process_exit"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "properties": {
+              "process": {
+                "type": "string"
+              },
+              "exit_code": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "process",
+              "exit_code"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "trigger"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "properties": {
+              "trigger_id": {
+                "type": "string"
+              },
+              "applied": {
+                "type": "boolean"
+              },
+              "applied_pose": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "trigger_id",
+              "applied",
+              "applied_pose"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

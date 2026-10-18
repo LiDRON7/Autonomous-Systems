@@ -1,139 +1,159 @@
-# Issue #64: scenario execution and testing handoff
+# Issue #64: revised #62 contract and partner test guide
 
-Branch: `codex/issue-64-scenario-runner`. Scope: execution only.
+Branch: `codex/issue-64-scenario-runner`. Updated October 18, 2026 against
+`Gazebo_Scenario_Updated.pdf`, especially Appendix A. This guide replaces the
+previous testing instructions. Scope is v1 execution and shared interfaces.
 
-## Changes and intended behavior
+## What changed
 
-`python3 scripts/run_scenario.py scenarios/clear_path.json` validates the selected
-JSON scenario, refuses an already running stack, starts `scripts/simulation.sh up`,
-waits for ROS readiness, sends a local NED destination, enables the mission,
-observes terminal states, and runs `simulation.sh down` automatically. The runner
-uses a per-user lock to prevent two runners from sharing the fixed container names.
-Run one scenario at a time from a dedicated Simulation checkout.
+The canonical command is now `python -m scenario_framework run <scenario.json>
+--output results`. The old `scripts/run_scenario.py` command remains an alias.
+The package provides Runner, Monitor, Validator and ResultStore interfaces. The
+runner owns processes, monotonic startup/mission/cleanup deadlines, cancellation,
+and full teardown. The monitor attaches before destination submission and enable.
 
-The ROS helper subscribes to `/autonomy/state` before sending any mission command.
-Readiness requires the `perception`, `mission`, and `diagnostics` nodes, a recent
-`IDLE` state, all three required services, and a successful
-`/autonomy/preflight_check`. That existing service checks fresh camera, LiDAR,
-GPS and PX4 messages and sensor frame IDs. Destination must return
-`accepted=true`; enable must return `success=true`.
+The v1 scenario still selects the default Simulation world/spawn, no injected
+obstacles, and local NED destination (north=8, east=0, down=-5 m). A Draft 2020-12
+JSON Schema validates structure; semantic checks reject nonfinite values and
+contradictory required/forbidden states. Unsupported v2 trigger/obstacle fields are
+rejected. This does not add obstacle injection or v2 replanning validation.
 
-A fresh default world/spawn is obtained by full stack teardown, followed by a new
-launch for the next run. The runner does not edit the Simulation repository or
-perform an in-place Gazebo world reset. It also does not remove Docker volumes.
-Verify the initial spawn visually during lab testing.
+Readiness requires perception/mission/diagnostics nodes, fresh IDLE, valid PX4
+position and obstacle messages, all mission services, discovery of the path
+publisher, and successful `/autonomy/preflight_check`. That check verifies camera,
+LiDAR, GPS and PX4 input health. A path message is not required before mission
+start. Destination must return accepted=true; enable must return success=true.
+Required topic/telemetry loss during a mission becomes ERROR/MONITOR_DATA_MISSING.
 
-## Configuration and execution-status contract
+Cleanup is always attempted after launch, including partial startup, timeout and
+cancellation. A per-user lock prevents concurrent runners. An already running
+manual stack is refused without stopping it. A dirty-stack latch is set before
+launch and cleared only after successful teardown. Cleanup failure or an abruptly
+killed runner blocks further reuse until the explicit reset command succeeds.
 
-The example follows the configuration concepts in the design attached to issue
-#62: name/version, environment, UAV start mode, mission, timeouts and expectations.
-Version 1 supports `environment={"profile":"default","obstacles":[]}`,
-`uav={"start_mode":"default"}`, and `mission.frame="local_ned"` only. Unsupported
-worlds, spawn modes, obstacles, frames and malformed/nonfinite numbers are rejected
-before launch. Default world selection and spawn remain owned by Simulation.
-The built-in validator needs only Python's standard library; no host ROS dependency
-or external JSON Schema package is required. Required fields and supported values
-are checked directly rather than introducing a second schema definition.
+## Important: execution completion does not imply PASS
 
-Change `mission.destination.north/east/down` in meters. Negative down means above
-the NED origin. The example is north=8, east=0, down=-5. Environment and UAV
-configuration explicitly select the existing defaults; custom world/spawn and
-obstacle injection are future extensions.
+The new contract separates `verdict` (PASS/FAIL) from `execution_status`
+(COMPLETED/TIMED_OUT/ERROR/CANCELLED). No `FAILED` status exists. Observing HOLD or
+ABORT is recorded as a state event, followed by a COMPLETED execution with an
+expectation-related FAIL when that forbidden state is observed. The evidence
+sequence number identifies the offending event.
 
-`timeouts.startup_s` covers launch/build and readiness; `mission_s` starts immediately
-before the enable request; `cleanup_s` bounds the teardown command. All use
-monotonic wall time, independent of paused simulation time. Allow extra startup
-time for a first uncached Docker/colcon build (e.g. 900 seconds). The helper receives
-the remaining startup budget when invoked; container startup adds small scheduling
-overhead. An outer watchdog also bounds a stuck helper. Process termination can
-add up to two seconds before a forced kill.
+This #64 implementation includes the conservative validator interface and the
+forbidden-state check. Detailed required-state sequence, trajectory/arrival and
+cross-topic causal evaluation belong to #65 and remain unimplemented. Therefore
+a normal run reaching COMPLETE currently ends with verdict=FAIL,
+execution_status=ERROR, reason=MONITOR_DATA_MISSING, phase=validation. Its
+`execution.json` still records the provisional COMPLETED execution. This is the
+expected unverified result for this branch, not a passing flight test. A PASS
+must wait for the detailed validator; receipt order is never treated as proof of
+causality across ROS and PX4 clock domains.
 
-| execution_status | Meaning | Exit code |
-| --- | --- | --- |
-| COMPLETED | Observed COMPLETE after accepted mission commands | 0 |
-| FAILED | Observed ABORT or HOLD during the mission | 1 |
-| TIMEOUT | Mission deadline expired | 124 |
-| ERROR | Invalid configuration, startup, service, or cleanup failure | 2 |
-| CANCELLED | Host runner received Ctrl-C or SIGTERM | 130 |
+| Situation | verdict | execution_status / reason | Exit |
+| --- | --- | --- | --- |
+| Fully validated mission and cleanup (future #65) | PASS | COMPLETED / NONE | 0 |
+| Observed forbidden HOLD/ABORT | FAIL | COMPLETED / EXPECTATION_FAILED | 1 |
+| Mission deadline expired | FAIL | TIMED_OUT / TIMEOUT | 124 |
+| Startup deadline expired | FAIL | ERROR / TIMEOUT | 2 |
+| Missing monitoring or detailed validation | FAIL | ERROR / MONITOR_DATA_MISSING | 2 |
+| Bad configuration | FAIL | ERROR / CONFIG_INVALID | 2 |
+| Service/process/infrastructure fault | FAIL | ERROR / INFRASTRUCTURE_ERROR | 2 |
+| Ctrl-C or SIGTERM | FAIL | CANCELLED / CANCELLED | 130 |
+| Cleanup failed, regardless of prior result | FAIL | ERROR / CLEANUP_ERROR | 2 |
 
-Startup timeout is `ERROR`, `reason=TIMEOUT`, `phase=startup`. A mission timeout is
-`TIMEOUT`, `reason=TIMEOUT`, `phase=mission`. Command rejection/infrastructure errors
-use `INFRASTRUCTURE_ERROR`; ABORT/HOLD use `MISSION_FAILURE`. Cleanup failure
-changes the final status to `ERROR/CLEANUP_ERROR` and retains `original_status`
-and `original_reason`. Cleanup is attempted even after partial startup or cancellation.
-An already running stack is refused and is not stopped.
+Cleanup failure sets phase=cleanup and preserves the previous status, verdict,
+reason and phase in `original_outcome`, plus all prior causes in `reasons`.
+Successful cleanup does not erase a prior failure. The teardown subprocess is
+bounded by cleanup_s; stopping a process group may add up to two seconds.
 
-`COMPLETED` is not a validation PASS. The `expected` section is checked for valid
-structure and contradictory required/forbidden states, then preserved for a future
-validator. This implementation does not evaluate path generation, arrival tolerance,
-state ordering, or obstacle behavior. Those belong to the validation issue.
+## Result and event files
 
-Each launched run saves evidence under `results/<UTC timestamp>-<unique ID>/`:
+Each unique run folder under the selected output directory contains:
 
-- `scenario.json`: selected configuration snapshot.
-- `result.json`: atomic final execution outcome after cleanup, duration, scenario,
-  run ID and configuration SHA-256. This is the validation component's entry point.
-- `events.jsonl`: observed state changes and preflight/destination/enable responses,
-  with monotonic elapsed timestamps, once the ROS helper starts.
-- `execution.json`: helper's provisional outcome before host cleanup.
-- `stack.log`, `mission.log`, `cleanup.log`: launch, helper and teardown logs.
+- `scenario.json`: resolved scenario snapshot.
+- `manifest.json`: run ID, UTC start, both repository commit IDs, canonical JSON
+  configuration SHA-256 and monotonic run origin. Unknown source commits prevent
+  launch and are explicitly null in error reports rather than fabricated.
+- `events.jsonl`: one shared event stream. Each event has schema_version=1,
+  run_id, strictly increasing seq, elapsed_s from the common run origin,
+  ros_time_s (or null), source, kind and payload.
+- State events carry previous/current. Path events archive all points, path ID,
+  count, frame and source ROS stamp. Position events preserve local NED values,
+  validity and PX4 boot timestamp with its explicit clock domain. Untimestamped
+  String/Bool messages use ros_time_s=null. Obstacle events carry detected and
+  optional distance. Service responses and process exits use Appendix A payloads.
+- `execution.json`: the ROS adapter's provisional execution outcome.
+- `provisional-result.json`: outcome saved before cleanup.
+- `result.json`: atomic final outcome after cleanup, with schema_version, run_id,
+  scenario_name, verdict, execution_status, reason, phase, duration_s,
+  cleanup_status, original_outcome, reasons, start_utc, source_commits,
+  configuration_sha256, expectation_checks and artifact_paths.
+- `stack.log`, `mission.log`, `cleanup.log`: process diagnostics; `progress.json`
+  shares the mission deadline with the host watchdog.
 
-Results are ignored by Git. Invalid configurations print structured `CONFIG_INVALID`
-JSON and exit 2 before creating a run directory. Lock refusal also prints JSON.
-Neither condition launches or tears down containers.
+Cleanup status is COMPLETED, ERROR or NOT_REQUIRED. Each expectation check carries
+passed and evidence_seq; deferred checks are explicitly unsuccessful/unverified.
+Artifact paths are relative to the run folder. Provisional evidence survives a
+finalization error. Unwritable output is reported as infrastructure ERROR on stderr.
+Configuration rejection prints structured JSON on stderr before launch; it does
+not create a run folder. Output must stay inside this repository because Docker
+mounts it at `/autonomy`. Default `results/` is ignored by Git.
 
-## Test 1: local checks without Gazebo
+## Setup and local checks
 
+Share this branch with your partner before they fetch it; it is not automatically
+published. Use Ubuntu 24.04, Docker/Compose, a working Gazebo display, Python 3.10+
+and matching Simulation checkout. On macOS run these commands inside the Ubuntu
+VM, as described in README; do not use host Docker Desktop for the flight tests.
 From the repository root:
-
-```bash
-python3 -m unittest discover -s tests -v
-```
-
-Expected: 14 tests pass. These use fake processes and ROS doubles; they do not
-start containers or prove that a simulated mission can fly. They cover readiness
-and command ordering, rejected commands, failure signals, mission/startup timeouts,
-cancellation, partial launch failure, cleanup failure, active stack refusal and
-configuration rejection.
-
-## Test 2: lab startup, automatic flight and teardown
-
-Requirements: Ubuntu 24.04 (native, WSL2, or UTM as described in README), Python 3,
-Docker/Compose, working Gazebo display, and the matching Simulation checkout.
-The branch must be shared with the tester before they can fetch it.
 
 ```bash
 git fetch origin
 git switch codex/issue-64-scenario-runner
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-scenarios.txt
 export SIMULATION_ROOT=/absolute/path/to/Simulation
 ./scripts/simulation.sh check
-python3 scripts/run_scenario.py scenarios/clear_path.json
+python -m unittest discover -s tests -v
+```
+
+Expected: 26 tests pass. These use fake processes/ROS doubles and validate
+produced events/results against JSON Schemas. They cover service order, publisher
+discovery, payload clocks, monitoring loss, timeouts (including a hung helper),
+cancellation, cleanup precedence, lock/refusal/dirty reset, invalid scenarios,
+atomic output failure and conservative verdicts. They do not prove flight success.
+The existing ROS/perception pytest suite has not been run in this environment.
+
+## Lab check 1: normal mission, evidence and fresh repeat
+
+```bash
+python -m scenario_framework run scenarios/clear_path.json --output results
 runner_code=$?
 echo "Runner exit: $runner_code"
 ./scripts/simulation.sh running
 ```
 
-Expected before mission: all required containers launch, autonomy builds, and no
-manual destination/enable command is needed. In `events.jsonl`, `ready` precedes
-`destination` with accepted=true, which precedes `enable` with success=true.
+Expected: stack builds/starts, waits for readiness, sets destination and enables
+without manual commands. A successful preflight response precedes the accepted
+destination response, which precedes successful enable in events.jsonl. All
+subscriptions are already attached. No pre-mission path message is required.
 
-Expected flight: default spawn, takeoff, motion toward 8 m north at 5 m altitude,
-landing, then COMPLETE. Inspect the route and landing surface in the selected
-world; this scenario's clear path is not yet confirmed in the lab.
+Inspect default spawn, route clearance, takeoff, motion toward 8 m north at 5 m
+altitude, landing and COMPLETE. These behaviors remain unverified in the lab.
+For a first uncached build, copy the scenario to /tmp and raise startup_s to 900.
 
-Expected final outcome for a successful execution: exit 0,
-`execution_status=COMPLETED`, `last_state=COMPLETE`, `cleanup=ok`.
-`simulation.sh running` prints no container IDs. Inspect all logs if the outcome
-is different; do not treat an unverified COMPLETED as validation of route accuracy.
-On a slow initial build, copy the scenario to `/tmp/clear_path.json`, increase
-`timeouts.startup_s` to 900, and pass that file to the runner.
+For an otherwise normal flight, this branch's expected final result is
+FAIL/ERROR/MONITOR_DATA_MISSING at validation, exit 2, cleanup_status=COMPLETED.
+The provisional execution.json should show COMPLETED and last_state=COMPLETE.
+No running container IDs should remain. Run it three times and verify a fresh
+world/spawn/IDLE and a unique evidence folder each time. Record every failed
+attempt too. Do not reinterpret these unverified outcomes as PASS.
 
-## Test 3: mission timeout and fresh repeat run
-
-Create a timeout scenario without editing the checked-in example:
+## Lab check 2: mission timeout and clean rerun
 
 ```bash
-python3 - <<'PY'
+python - <<'PY'
 import json
 from pathlib import Path
 p = json.loads(Path('scenarios/clear_path.json').read_text())
@@ -142,68 +162,94 @@ p['timeouts']['startup_s'] = 900
 p['timeouts']['mission_s'] = 0.1
 Path('/tmp/mission_timeout.json').write_text(json.dumps(p))
 PY
-python3 scripts/run_scenario.py /tmp/mission_timeout.json
+python -m scenario_framework run /tmp/mission_timeout.json --output results
 runner_code=$?
 echo "Runner exit: $runner_code"
 ./scripts/simulation.sh running
 ```
 
-Expected: preflight readiness first, then TIMEOUT during mission, exit 124, and
-cleanup=ok. No container IDs remain. The vehicle may have only just begun takeoff
-when the timeout tears down this simulation.
+Expected: FAIL/TIMED_OUT/TIMEOUT, phase=mission, exit 124 and bounded teardown with
+cleanup_status=COMPLETED. No running IDs remain. It may terminate at takeoff.
+Then rerun the normal scenario and confirm fresh spawn and state. Its final
+verdict still has the validation limitation described above.
 
-Run the normal scenario again. Expected: fresh default world/spawn and IDLE state,
-no old mission resumption, and a new result directory. Record both run IDs.
+## Lab check 3: startup timeout, cancellation and monitoring loss
 
-## Test 4: startup timeout, cancellation and refusal
+Startup timeout: use a temporary scenario with startup_s=0.1. Expected:
+FAIL/ERROR/TIMEOUT at startup, exit 2, no enable response. If launch began,
+cleanup_status=COMPLETED; if timeout happened before launch, NOT_REQUIRED is valid.
+For the controlled withheld-component test in Appendix B, stop one required
+component in a dedicated simulation and confirm no mission-enable call occurs.
 
-For startup timeout, create another temporary copy with startup_s=0.1 and
-mission_s=300. Run it as above. Expected: ERROR/TIMEOUT, phase=startup, exit 2,
-cleanup=ok after any attempted launch, and no running stack containers.
+Cancellation: run a normal scenario, press Ctrl-C once during startup or flight.
+Expected: FAIL/CANCELLED/CANCELLED, exit 130 and cleanup_status=COMPLETED. Wait for
+cleanup. A second interruption during teardown can produce CLEANUP_ERROR.
 
-For cancellation, run the normal scenario and press Ctrl-C while startup or flight
-is active. Expected: CANCELLED, exit 130, cleanup=ok, and no running stack
-containers. Ctrl-C again during teardown may interrupt cleanup and produce
-ERROR/CLEANUP_ERROR; use one interrupt and wait for teardown.
+Monitoring loss: in a dedicated test run after enable, stop the Simulation `ros`
+service using the same Compose project/configuration used to launch it. This
+withholds the sensor bridge. Expected: within the health window (about two
+seconds plus service response time), FAIL/ERROR/MONITOR_DATA_MISSING at mission,
+exit 2 and cleanup. If the whole launcher exits first, INFRASTRUCTURE_ERROR is
+also valid; keep logs to distinguish process failure from lost telemetry.
 
-For refusal, manually start `./scripts/simulation.sh up` in one terminal. Run the
-scenario runner in a second terminal. Expected: ERROR with a message that the stack
-is already running; the manually launched containers remain untouched. Stop that
-manual stack with `./scripts/simulation.sh down` before further tests.
+## Lab check 4: failure interface, refusal and configuration rejection
 
-## Test 5: failure signal and invalid configuration
-
-During a normal scenario run, after mission enable, use a second terminal to inject
-a terminal state into this simulation only:
+During mission execution, publish an intentional forbidden state in another
+terminal (simulation only):
 
 ```bash
 docker exec lidron_autonomy bash -c '
-  source /autonomy/install/setup.bash &&
-  ros2 topic pub --once /autonomy/state std_msgs/msg/String "{data: HOLD}"
+ source /autonomy/install/setup.bash &&
+ ros2 topic pub --once /autonomy/state std_msgs/msg/String "{data: HOLD}"
 '
 ```
 
-Expected: if the helper receives HOLD before another terminal state, it records
-FAILED/MISSION_FAILURE, last_state=HOLD, exits 1 and tears down the stack. This
-checks the execution failure interface; it does not validate a real vehicle fault.
-Publishing may fail when teardown starts; retain events.jsonl to show what arrived.
+Expected if HOLD is received while monitoring is healthy: FAIL/COMPLETED/
+EXPECTATION_FAILED, phase=validation, exit 1. The check must reference the HOLD
+event's seq. This injects a state message; it does not prove a real flight fault.
+Keep events because concurrent publisher timing can affect which state arrived.
 
-Create a temporary scenario with mission.frame set to `enu` (or a negative timeout).
-Expected: printed ERROR/CONFIG_INVALID, exit 2, no new run directory and no container
-changes. Do not modify production ROS topics or run these tests on physical hardware.
+Manual-stack refusal: start `./scripts/simulation.sh up` separately, then invoke
+the runner. Expected: FAIL/ERROR/INFRASTRUCTURE_ERROR and the existing stack
+untouched. Stop it manually before continuing. A second concurrent runner must
+also be refused without interfering with the first run.
 
-## Evidence to send back
+Configuration rejection: change a temporary copy to mission.frame=enu, a negative
+timeout, nonfinite number or version=2/triggers fields. Expected: JSON diagnostic
+ERROR/CONFIG_INVALID at config on stderr, exit 2, no launch or teardown.
 
-For each test, send the scenario file, console output/exit code, entire result
-folder, Simulation and Autonomous-Systems commit IDs (`git rev-parse HEAD` in each),
-OS/Docker versions, and a screenshot or short recording of spawn/flight/landing.
-Record expected vs actual, whether cleanup left containers running, and whether a
-second run started fresh. An infrastructure failure is useful evidence too.
+## Lab check 5: cleanup error and recovery
 
-Local checks passed on October 18, 2026. Real Docker/Gazebo/PX4 flight, route
-clearance, fresh spawn, and repeated lab execution remain pending. No live
-simulation success is claimed. Automatic teardown does not replace a controlled
-landing on hardware; this entry point is for the simulated stack only.
+The local fake-adapter test already injects shutdown failure. In a controlled lab
+fault-injection harness, make the shutdown adapter fail after an observed HOLD.
+Expected: FAIL/ERROR/CLEANUP_ERROR at cleanup, cleanup_status=ERROR,
+original_outcome=COMPLETED/FAIL/EXPECTATION_FAILED, and both reasons retained.
+Do not break the shared Docker daemon to simulate this test.
 
-Design reference: https://github.com/LiDRON7/Autonomous-Systems/issues/62#issuecomment-6149697037
-Implementation request: https://github.com/LiDRON7/Autonomous-Systems/issues/64
+A subsequent normal runner invocation must refuse the dirty stack. Resolve the
+infrastructure fault, then perform an explicit full teardown:
+
+```bash
+python -m scenario_framework reset --cleanup-timeout 30
+```
+
+Expected: successful teardown, no running stack containers, dirty latch cleared.
+The next run launches from fresh state. A failed reset retains the latch.
+
+## Evidence and acceptance boundary
+
+Send the complete run folder, scenario, console output and exit code, both Git
+commit IDs, OS/Docker versions and spawn/flight/landing screenshots or recording.
+For every check record expected vs actual, teardown time, leftover containers and
+whether the next run was fresh. Never discard failed attempts.
+
+Appendix B's full acceptance matrix (three clear_path and three alternating
+obstacle_replanning runs with 6/6 PASS, expectation-failure checks and versioned
+scenario extension) depends on #65/#66/#67. V2 geometry/transforms, injection
+windows, replacement-path clearance/progress and fresh arrival evidence remain
+outside this #64 change. A republished path or state name alone cannot satisfy
+those checks. #64 contract/lifecycle testing can proceed now; complete framework
+validation and issue closure must retain these explicit dependencies.
+
+No actual Gazebo/PX4 success is claimed. This runner tears down a simulation;
+it must not be used as a flight-control shutdown mechanism on physical hardware.

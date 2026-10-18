@@ -386,16 +386,29 @@ docker exec lidron_autonomy bash -c "
 
 ## Automated Scenario Execution
 
-Run a configured mission, including startup and teardown, with:
+Install the host-side schema dependency and run a configured scenario:
 
 ```bash
-python3 scripts/run_scenario.py scenarios/clear_path.json
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-scenarios.txt
+python -m scenario_framework run scenarios/clear_path.json --output results
 ```
 
-See [the scenario testing guide](docs/scenario-testing.md) for requirements,
-expected results, failure tests, and the execution-status contract. Gazebo
-flight validation is pending; `COMPLETED` is an execution outcome, not a
-mission-validation PASS.
+The runner starts the stack, waits for healthy inputs and publisher discovery,
+sets the destination, enables the mission, records Appendix A events, and tears
+it down. The existing `scripts/run_scenario.py` command remains an alias.
+
+The revised issue #62 contract separates execution status from PASS/FAIL verdict.
+Detailed trajectory/arrival validation remains in #65. A run reaching COMPLETE
+therefore remains unverified: final FAIL/ERROR/MONITOR_DATA_MISSING, with the
+observed COMPLETED execution preserved in `execution.json`. No flight PASS is
+claimed. Mission deadline expiry is TIMED_OUT; cleanup failure preserves the
+original outcome and blocks reuse until `python -m scenario_framework reset`.
+
+See [the updated partner testing guide](docs/scenario-testing.md) and
+[PDF report](output/pdf/issue-64-change-report.pdf) for commands, expected results,
+contract fields, failure tests, and the remaining validation/lab dependencies.
 
 ## Run Tests
 

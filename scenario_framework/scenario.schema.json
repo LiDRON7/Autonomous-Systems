@@ -1,0 +1,169 @@
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "environment": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "const": "default"
+        },
+        "obstacles": {
+          "type": "array",
+          "maxItems": 0
+        }
+      },
+      "required": [
+        "profile",
+        "obstacles"
+      ],
+      "additionalProperties": false
+    },
+    "uav": {
+      "type": "object",
+      "properties": {
+        "start_mode": {
+          "const": "default"
+        }
+      },
+      "required": [
+        "start_mode"
+      ],
+      "additionalProperties": false
+    },
+    "mission": {
+      "type": "object",
+      "properties": {
+        "frame": {
+          "const": "local_ned"
+        },
+        "destination": {
+          "type": "object",
+          "properties": {
+            "north": {
+              "type": "number"
+            },
+            "east": {
+              "type": "number"
+            },
+            "down": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "north",
+            "east",
+            "down"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "frame",
+        "destination"
+      ],
+      "additionalProperties": false
+    },
+    "timeouts": {
+      "type": "object",
+      "properties": {
+        "startup_s": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "mission_s": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "cleanup_s": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "startup_s",
+        "mission_s",
+        "cleanup_s"
+      ],
+      "additionalProperties": false
+    },
+    "expected": {
+      "type": "object",
+      "properties": {
+        "states": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "IDLE",
+              "PREFLIGHT",
+              "TAKEOFF",
+              "PLANNING",
+              "NAVIGATING",
+              "REPLANNING",
+              "APPROACH",
+              "LANDING_CHECK",
+              "LANDING",
+              "COMPLETE",
+              "HOLD",
+              "ABORT"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "forbidden_states": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "IDLE",
+              "PREFLIGHT",
+              "TAKEOFF",
+              "PLANNING",
+              "NAVIGATING",
+              "REPLANNING",
+              "APPROACH",
+              "LANDING_CHECK",
+              "LANDING",
+              "COMPLETE",
+              "HOLD",
+              "ABORT"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "require_path": {
+          "type": "boolean"
+        },
+        "arrival_tolerance_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "states",
+        "forbidden_states",
+        "require_path",
+        "arrival_tolerance_m"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "name",
+    "version",
+    "environment",
+    "uav",
+    "mission",
+    "timeouts",
+    "expected"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}
