@@ -3,7 +3,6 @@
 import json
 import math
 
-import numpy as np
 import rclpy
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import OccupancyGrid, Path
@@ -28,6 +27,7 @@ from interfaces.srv import SetGpsDestination, SetLocalDestination
 
 from .geo import gps_to_ned
 from .grid import RollingGrid
+from .mapping import depth_points_to_world
 from .planner import astar, landing_search_offset, simplify
 from .state import MissionState, can_transition, data_is_fresh
 
@@ -164,6 +164,7 @@ class MissionNode(Node):
             "map.size_m": 30.0,
             "map.inflation_m": 1.0,
             "map.expiry_s": 2.0,
+            "map.sensor_translation_flu_m": [0.0, 0.0, 0.0],
             "map.min_height_m": -1.5,
             "map.max_height_m": 1.5,
             "destination.north": 8.0,
@@ -233,61 +234,33 @@ class MissionNode(Node):
                 self.landing_confirmations + 1 if self.landing_suitable else 0
             )
 
-
     def _on_depth_points(self, msg: PointCloud2) -> None:
         if self.position is None:
             return
-
-        # Read OAK-D point cloud (FLU: X=Forward, Y=Left, Z=Up)
-        raw = point_cloud2.read_points_numpy(
-            msg, field_names=("x", "y", "z")
+        raw = point_cloud2.read_points_numpy(msg, field_names=("x", "y", "z"))
+        world, valid_count = depth_points_to_world(
+            raw, self.position, self.yaw,
+            float(self.get_parameter("map.min_height_m").value),
+            float(self.get_parameter("map.max_height_m").value),
+            self.get_parameter("map.sensor_translation_flu_m").value,
         )
-        points = np.asarray(raw, dtype=float).reshape((-1, 3))
-        points = points[np.isfinite(points).all(axis=1)]
-
-        valid_count = len(points)
-
-        # Filter by height (Z) and forward distance (X)
-        low = float(self.get_parameter("map.min_height_m").value)
-        high = float(self.get_parameter("map.max_height_m").value)
-
-        points = points[
-            (points[:, 2] >= low) &
-            (points[:, 2] <= high) &
-            (points[:, 0] > 0.2)
-        ]
-
-        filtered_count = len(points)
-
-        # Transform sensor-relative FLU to local NED coordinates
-        cos_yaw = math.cos(self.yaw)
-        sin_yaw = math.sin(self.yaw)
-
-        world = [
-            (
-                self.position[0] + cos_yaw * forward + sin_yaw * left,
-                self.position[1] + sin_yaw * forward - cos_yaw * left,
-            )
-            for forward, left, _up in points
-        ]
-
-        # Insert transformed obstacle points into rolling grid
-        self.grid_origin = self.grid.origin_around(self.position[:2])
-
         now = self._now()
+        self.grid_origin = self.grid.origin_around(self.position[:2])
         self.grid.observe(world, self.grid_origin, now)
-
         self.stamps["depth"] = now
-
-        # Diagnostic logging for Issue #73
-        self.get_logger().info(
-            f"OAK-D mapping: valid={valid_count}, "
-            f"filtered={filtered_count}, "
-            f"occupied_cells={len(self.grid.occupied)}"
+        self.get_logger().debug(
+            f"OAK-D mapping: valid={valid_count}, retained={len(world)}, "
+            f"occupied_cells={len(self.grid.occupied)}",
+            throttle_duration_sec=2.0,
         )
+        self._publish_grid()
 
-        self._publish_grid(msg.header.frame_id or "map")
-
+    def _refresh_grid(self) -> None:
+        if self.position is None:
+            return
+        self.grid_origin = self.grid.origin_around(self.position[:2])
+        self.grid.observe([], self.grid_origin, self._now())
+        self._publish_grid()
 
     def _set_local(self, request, response):
         if self.state not in {MissionState.IDLE, MissionState.COMPLETE, MissionState.ABORT}:
@@ -349,6 +322,7 @@ class MissionNode(Node):
         return all(data_is_fresh(now, self.stamps[key], timeout) for key in self.stamps)
 
     def _tick(self) -> None:
+        self._refresh_grid()
         self.state_pub.publish(String(data=self.state.value))
         if self.state in ACTIVE_STATES:
             self._publish_offboard_mode()
@@ -409,7 +383,7 @@ class MissionNode(Node):
 
     def _plan(self) -> None:
         assert self.position and self.destination
-        self.grid_origin = self.grid.origin_around(self.position[:2])
+        self._refresh_grid()
         start = self.grid.to_cell(self.position[:2], self.grid_origin)
         goal = self.grid.to_cell(self._planning_goal(), self.grid_origin)
         route = astar(start, goal, set(self.grid.occupied), self.grid.width)
@@ -547,12 +521,13 @@ class MissionNode(Node):
             msg.poses.append(pose)
         self.path_pub.publish(msg)
 
-    def _publish_grid(self, _sensor_frame: str) -> None:
+    def _publish_grid(self) -> None:
         msg = OccupancyGrid()
         msg.header.frame_id = "map"
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.info.resolution = self.grid.resolution
         msg.info.width = msg.info.height = self.grid.width
+        msg.info.origin.orientation.w = 1.0
         msg.info.origin.position.x = self.grid_origin[0]
         msg.info.origin.position.y = self.grid_origin[1]
         msg.data = [
