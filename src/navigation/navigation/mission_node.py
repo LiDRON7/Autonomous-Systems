@@ -377,6 +377,7 @@ class MissionNode(Node):
     def _plan(self) -> None:
         assert self.position and self.destination
         self.grid_origin = self.grid.origin_around(self.position[:2])
+        self.grid.observe([], self.grid_origin, self._now())
         start = self.grid.to_cell(self.position[:2], self.grid_origin)
         goal = self.grid.to_cell(self._planning_goal(), self.grid_origin)
         route = astar(start, goal, set(self.grid.occupied), self.grid.width)

@@ -38,11 +38,9 @@ class RollingGrid:
 
     def observe(self, points: list[Point], origin: Point, now_s: float) -> None:
         for point in points:
-            key = (
-                round(point[0] / self.resolution) * self.resolution,
-                round(point[1] / self.resolution) * self.resolution,
-            )
-            self.observations[key] = now_s
+            # Preserve the measured world position: rounding before projection
+            # can move an obstacle into a different cell as the origin shifts.
+            self.observations[point] = now_s
         self.expire(now_s)
         self.occupied = {}
         radius = math.ceil(self.inflation_m / self.resolution)
