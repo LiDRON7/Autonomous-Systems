@@ -54,7 +54,15 @@ On the Pi, all three are in the outer row (along the board edge): the 3rd, 4th a
 
 3. Check the UART exists: `ls /dev/ttyAMA0`. If it doesn't, add `dtparam=uart0=on` to `/boot/firmware/config.txt` and reboot.
 
-4. Get both repos on the `flight-test` branch, in `~/LiDRON/`.
+4. Stop Linux from using the UART as a login console. Otherwise it swallows everything PX4 sends:
+
+   ```bash
+   sudo systemctl mask --now serial-getty@ttyAMA0.service
+   sudo sed -i "s/console=serial0,115200 //" /boot/firmware/current/cmdline.txt
+   sudo reboot
+   ```
+
+5. Get both repos on the `flight-test` branch, in `~/LiDRON/`.
 
 ## 3. Set up PX4 (once per Pixhawk)
 
@@ -124,7 +132,7 @@ Indoors, the GPS has no fix, so check 6 lists `gps` as stale. Run it outside.
 
 | Problem | Fix |
 | --- | --- |
-| `px4-agent` has no `create_client` | The TELEM2 wires are loose or TX/RX are swapped. With the agent stopped, `stty -F /dev/ttyAMA0 921600 raw; timeout 4 cat /dev/ttyAMA0 \| wc -c` must print more than 0. Also check `UXRCE_DDS_CFG = 102`. |
+| `px4-agent` has no `create_client` | First check `systemctl status serial-getty@ttyAMA0` says masked (step 2.4). Then: the TELEM2 wires are loose or TX/RX are swapped. With the agent stopped, `stty -F /dev/ttyAMA0 921600 raw; timeout 4 cat /dev/ttyAMA0 \| wc -c` must print more than 0. Also check `UXRCE_DDS_CFG = 102`. |
 | `oak-d` keeps restarting with `No available devices` or `Insufficient permissions` | The udev rule from step 2 is missing. Add it, then unplug and replug the camera. |
 | Camera topics exist in `oak-d` but not in autonomy | Every container needs `FASTDDS_BUILTIN_TRANSPORTS=UDPv4` (it's in both compose files). |
 | Camera rate is low | It's in a black USB 2 port. Move it to a blue one. |
