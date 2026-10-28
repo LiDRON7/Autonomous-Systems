@@ -1,0 +1,127 @@
+# Set up the drone's Pi
+
+How to wire everything to the Raspberry Pi 5 (`lidron-cranberry`), start the containers, and check each part works. Do the sections in order.
+
+To get into the Pi, see [connect-to-pi.md](connect-to-pi.md).
+
+## 1. Connect the hardware
+
+| Part | Plug it into | Used by |
+| --- | --- | --- |
+| Pixhawk USB-C | any Pi USB port | `airborne-bridge` (MAVLink to the radio) |
+| Pixhawk TELEM2 | Pi GPIO pins 10, 8 and 6 (see below) | `px4-agent` (autonomy talks to PX4) |
+| SiK radio | any Pi USB port | `airborne-bridge` |
+| OAK-D Pro | a **blue** USB 3 port on the Pi | `oak-d` |
+| H-RTK GPS (10-pin plug) | Pixhawk **GPS1**, not the Pi | PX4 |
+
+TELEM2 uses 3 of its 6 wires. Count from pin 1, the red wire.
+
+| TELEM2 wire | Pi pin |
+| --- | --- |
+| 1 (5 V) | nothing, tape it off |
+| 2 (TX) | 10 |
+| 3 (RX) | 8 |
+| 6 (GND) | 6 |
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/LiDRON7/Sensor-Control-Data-Gathering/flight-test/docs/architecture/connections-dark.png">
+  <img alt="How every part connects, with the TELEM2 to Pi wiring at the bottom" src="https://raw.githubusercontent.com/LiDRON7/Sensor-Control-Data-Gathering/flight-test/docs/architecture/connections-light.png">
+</picture>
+
+## 2. Set up the Pi (once per Pi)
+
+`lidron-cranberry` already has all of this. Only do it on a new Pi.
+
+1. Let your user run Docker and use the serial ports, then log out and back in:
+
+   ```bash
+   sudo usermod -aG docker,dialout $USER
+   ```
+
+2. Let the camera work without root:
+
+   ```bash
+   echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="03e7", MODE="0666"' | sudo tee /etc/udev/rules.d/80-movidius.rules
+   sudo udevadm control --reload-rules && sudo udevadm trigger
+   ```
+
+3. Check the UART exists: `ls /dev/ttyAMA0`. If it doesn't, add `dtparam=uart0=on` to `/boot/firmware/config.txt` and reboot.
+
+4. Get both repos on the `flight-test` branch, in `~/LiDRON/`.
+
+## 3. Set up PX4 (once per Pixhawk)
+
+1. In QGroundControl, flash **PX4 1.15.x**. Not 1.16 or newer: they rename topics and autonomy gets no data.
+2. Calibrate the sensors, the radio and the flight modes.
+3. Set these parameters, then reboot (Vehicle Setup → Parameters → Tools → Reboot Vehicle):
+
+   | Parameter | Value |
+   | --- | --- |
+   | `UXRCE_DDS_CFG` | `102` (TELEM2) |
+   | `SER_TEL2_BAUD` | `921600` |
+   | `MAV_1_CONFIG` | `0` |
+
+## 4. Start everything
+
+1. Find the USB names: `ls /dev/serial/by-id/`
+
+2. Create `~/LiDRON/Sensor-Control-Data-Gathering/.env` with them:
+
+   ```dotenv
+   PIXHAWK_DEVICE=/dev/serial/by-id/usb-Auterion_PX4_FMU_v6X.x_0-if00
+   RADIO_DEVICE=/dev/serial/by-id/usb-FTDI_FT231X_USB_UART_<your radio>-if00-port0
+   PX4_AGENT_DEVICE=/dev/ttyAMA0
+   SERIAL_GID=20
+   ROS_DOMAIN_ID=0
+   ```
+
+3. Start the sensor containers:
+
+   ```bash
+   cd ~/LiDRON/Sensor-Control-Data-Gathering
+   docker compose up -d --build airborne-bridge px4-agent oak-d
+   ```
+
+4. Start autonomy:
+
+   ```bash
+   cd ~/LiDRON/Autonomous-Systems
+   docker compose -f integration/compose.hardware.yml up -d --build
+   ```
+
+The first build takes about an hour on the Pi. After that, leave out `--build` and they start in seconds. They also start by themselves after a reboot.
+
+## 5. Check it works
+
+Add this helper first. It runs a command inside the autonomy container:
+
+```bash
+auto() { docker exec lidron_autonomy bash -c "source /opt/ros/jazzy/setup.bash && source /autonomy/install/setup.bash && $*"; }
+```
+
+| # | Check | Command | Good result |
+| --- | --- | --- | --- |
+| 1 | Pixhawk and radio | `docker logs --tail 5 airborne-bridge` | `Opened pixhawk`, `Opened radio`, then `Forwarded ...` every 5 s |
+| 2 | TELEM2 link | `docker logs px4-agent` | a `create_client` line |
+| 3 | PX4 reaches autonomy | `auto ros2 topic hz /fmu/out/vehicle_status` | a steady rate |
+| 4 | Camera reaches autonomy | `auto ros2 topic hz /oakd/depth/points` | about 13 Hz |
+| 5 | Obstacle detection | `auto ros2 topic echo --once /perception/obstacle_distance` | your hand's distance in meters |
+| 6 | Everything at once | `auto ros2 service call /autonomy/preflight_check std_srvs/srv/Trigger` | `success=True` |
+| 7 | Ground station | change the flight mode in QGroundControl over the radio | the mode changes, and `uplinked` goes up in check 1 |
+
+When all 7 pass, do the props-off dry run ([Autonomous-Systems #84](https://github.com/LiDRON7/Autonomous-Systems/issues/84)).
+
+Indoors, the GPS has no fix, so check 6 lists `gps` as stale. Run it outside.
+
+## If something fails
+
+| Problem | Fix |
+| --- | --- |
+| `px4-agent` has no `create_client` | The TELEM2 wires are loose or TX/RX are swapped. With the agent stopped, `stty -F /dev/ttyAMA0 921600 raw; timeout 4 cat /dev/ttyAMA0 \| wc -c` must print more than 0. Also check `UXRCE_DDS_CFG = 102`. |
+| `oak-d` keeps restarting with `No available devices` or `Insufficient permissions` | The udev rule from step 2 is missing. Add it, then unplug and replug the camera. |
+| Camera topics exist in `oak-d` but not in autonomy | Every container needs `FASTDDS_BUILTIN_TRANSPORTS=UDPv4` (it's in both compose files). |
+| Camera rate is low | It's in a black USB 2 port. Move it to a blue one. |
+| PX4 says no GPS, even with the LED on | Reseat the 10-pin plug in GPS1 and reboot the Pixhawk. Indoors it should still show as present, just with no fix. |
+| `airborne-bridge` won't start | A path in `.env` is wrong. Compare it with `ls /dev/serial/by-id/`. |
+
+For everyday commands (logs, restart, update), see the [containers walkthrough](https://github.com/LiDRON7/Sensor-Control-Data-Gathering/blob/flight-test/CONTAINERS-WALKTHROUGH.md).

@@ -62,6 +62,7 @@ The drone takes off to 5 m and flies toward the goal. It replans when the camera
 ## More
 
 - [docs/connect-to-pi.md](docs/connect-to-pi.md): how to SSH into the drone's Pi, at the university or in the field.
+- [docs/pi-setup.md](docs/pi-setup.md): wire the drone's Pi, start the containers and check everything works.
 - [docs/topics.md](docs/topics.md): every topic and service, who sends it and who uses it.
 - [docs/reference.md](docs/reference.md): parameters, tests and troubleshooting.
 - `docs/architecture/`: the diagrams. Open the `.excalidraw` files at [excalidraw.com](https://excalidraw.com) to edit them.
