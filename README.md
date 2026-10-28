@@ -2,7 +2,10 @@
 
 This code flies the drone on its own. It maps obstacles with the OAK-D camera, plans a path with A*, sends the flight commands to PX4 and checks the landing spot with the LiDAR. The same container runs in simulation and on the drone's Raspberry Pi 5 (ROS 2 Jazzy, PX4 v1.15).
 
-![How data moves from the sensors to PX4](docs/architecture/DataFlow.excalidraw.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/architecture/data-flow-dark.png">
+  <img alt="How data moves from the sensors to PX4" src="docs/architecture/data-flow-light.png">
+</picture>
 
 ## Run it on the drone
 
@@ -51,7 +54,10 @@ The pilot can take over at any time with the RC transmitter, or switch to Land o
 
 The drone takes off to 5 m and flies toward the goal. It replans when the camera sees something closer than 2 m. At the goal it checks the ground with the LiDAR. If the spot is unsafe it tries up to 8 nearby spots, and if none is safe it lands where it is. If any input goes stale it hovers, and after the hold timeout it aborts.
 
-![Mission decision loop and landing check](docs/architecture/AlgorithmLogic.excalidraw.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/architecture/algorithm-logic-dark.png">
+  <img alt="Mission decision loop and landing check" src="docs/architecture/algorithm-logic-light.png">
+</picture>
 
 ## More
 
