@@ -1,24 +1,6 @@
 # Autonomous Systems reference
 
-Topics, services, parameters, tests and troubleshooting. Start with the [README](../README.md).
-
-## Topics and services
-
-| Package | Reads | Publishes |
-| --- | --- | --- |
-| `perception` | `/oakd/depth/image`, `/lidar/points` | `/perception/obstacle_detected`, `/perception/obstacle_distance`, `/landing/assessment`, `/landing/ground_points`, `/landing/non_ground_points` |
-| `navigation` (mission) | `/oakd/depth/points`, `/perception/obstacle_detected`, `/landing/assessment`, `/fmu/out/vehicle_local_position`, `vehicle_attitude`, `vehicle_status`, `vehicle_command_ack` | `/fmu/in/offboard_control_mode`, `trajectory_setpoint`, `vehicle_command`, `/autonomy/state`, `/autonomy/path`, `/autonomy/occupancy_grid` |
-| `navigation` (diagnostics) | camera, LiDAR, `/fmu/out/vehicle_local_position`, `vehicle_status`, `vehicle_gps_position` | `/autonomy/preflight_check` service |
-
-The mission node is the only thing that commands PX4.
-
-| Service | Type | Does |
-| --- | --- | --- |
-| `/autonomy/set_local_destination` | `interfaces/srv/SetLocalDestination` | Set a north/east/down destination |
-| `/autonomy/set_gps_destination` | `interfaces/srv/SetGpsDestination` | Set a latitude/longitude/altitude destination |
-| `/autonomy/enable` | `std_srvs/srv/SetBool` | Start (`true`) or hold (`false`) |
-| `/autonomy/abort` | `std_srvs/srv/Trigger` | Controlled landing |
-| `/autonomy/preflight_check` | `std_srvs/srv/Trigger` | Check every input is live |
+Parameters, tests and troubleshooting. Topics and services are in [topics.md](topics.md). Start with the [README](../README.md).
 
 ## Configuration
 
