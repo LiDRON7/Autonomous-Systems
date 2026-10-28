@@ -4,7 +4,7 @@
 ssh lidron-cranberry@lidron-pi
 ```
 
-That's the command at the university, at home, or anywhere with internet, once you've done the one-time setup below. In the field there's no internet, so see [In the field](#in-the-field).
+That's the command at the university, at home, or anywhere with internet. Run it from the lab computer, or from your own computer after the setup below. In the field there's no internet, so see [In the field](#in-the-field).
 
 Ask the leads for the Pi password. It's never written in the repos.
 
