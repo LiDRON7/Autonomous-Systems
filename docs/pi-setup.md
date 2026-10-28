@@ -19,9 +19,16 @@ TELEM2 uses 3 of its 6 wires. Count from pin 1, the red wire.
 | TELEM2 wire | Pi pin |
 | --- | --- |
 | 1 (5 V) | nothing, tape it off |
-| 2 (TX) | 10 |
-| 3 (RX) | 8 |
+| 2 (TX, orange) | 10 |
+| 3 (RX, yellow) | 8 |
 | 6 (GND) | 6 |
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/LiDRON7/Sensor-Control-Data-Gathering/flight-test/docs/architecture/telem2-wiring-dark.png">
+  <img alt="TELEM2 plug wires 2, 3 and 6 going to Pi header pins 10, 8 and 6, drawn in the real orientation" src="https://raw.githubusercontent.com/LiDRON7/Sensor-Control-Data-Gathering/flight-test/docs/architecture/telem2-wiring-light.png">
+</picture>
+
+On the Pi, all three are in the outer row (along the board edge): the 3rd, 4th and 5th pin from the end with pin 1.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/LiDRON7/Sensor-Control-Data-Gathering/flight-test/docs/architecture/connections-dark.png">
