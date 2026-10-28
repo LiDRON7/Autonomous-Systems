@@ -1,0 +1,20 @@
+# Autonomy on the drone's Raspberry Pi. PX4 and the sensors come from the
+# Sensor-Control-Data-Gathering containers (px4-agent, oak-d, airborne-bridge).
+services:
+  autonomy:
+    image: lidron-autonomy:jazzy-px4-1.15
+    build:
+      context: ..
+      dockerfile: integration/Dockerfile
+    container_name: lidron_autonomy
+    network_mode: host
+    # Same IPC namespace as the sensor containers, or DDS shared memory drops their data.
+    ipc: host
+    init: true
+    # Safe to start at boot: hardware mode never auto-starts a mission.
+    restart: unless-stopped
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - AUTONOMY_CONFIG=hardware
+    volumes:
+      - ..:/autonomy

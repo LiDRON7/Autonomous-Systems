@@ -15,4 +15,4 @@ fi
 source install/setup.bash
 
 exec ros2 launch bringup autonomous_system.launch.py \
-  config_file:=/autonomy/src/bringup/config/simulation.yaml
+  config_file:="/autonomy/src/bringup/config/${AUTONOMY_CONFIG:-simulation}.yaml"
