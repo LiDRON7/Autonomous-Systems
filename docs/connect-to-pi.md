@@ -1,7 +1,7 @@
 # Connect to the drone's Pi
 
 ```bash
-ssh lidron-cranberry@lidron-pi
+ssh lidron-cranberry@lidron-cranberry
 ```
 
 That's the command at the university, at home, or anywhere with internet. Run it from the lab computer, or from your own computer after the setup below. In the field there's no internet, so see [In the field](#in-the-field).
@@ -18,8 +18,8 @@ Tailscale allows only 6 devices on the LiDRON account, and some are already take
 
 1. Install Tailscale from [tailscale.com/download](https://tailscale.com/download). It's available for macOS, Windows and Linux.
 2. Open Tailscale and log in with the LiDRON Gmail account. Ask the leads for the password.
-3. Check that you can see the Pi: `tailscale status` should list `lidron-pi`.
-4. Connect: `ssh lidron-cranberry@lidron-pi`. Type `yes` the first time it asks about the fingerprint.
+3. Check that you can see the Pi: `tailscale status` should list `lidron-cranberry`.
+4. Connect: `ssh lidron-cranberry@lidron-cranberry`. Type `yes` the first time it asks about the fingerprint.
 
 On Windows, run the `ssh` command in PowerShell. It's built in.
 
@@ -40,8 +40,8 @@ Tailscale doesn't work here, because it needs internet.
 
 | Problem | Fix |
 | --- | --- |
-| `Could not resolve hostname lidron-pi` | Tailscale isn't running or isn't logged in on your computer. Open it and check `tailscale status`. |
-| `lidron-pi` is missing from `tailscale status` | You're logged in with a different account, or the Pi is off or offline. |
+| `Could not resolve hostname lidron-cranberry` | Tailscale isn't running or isn't logged in on your computer. Open it and check `tailscale status`. |
+| `lidron-cranberry` is missing from `tailscale status` | You're logged in with a different account, or the Pi is off or offline. |
 | `Permission denied` | Wrong password. Ask the leads. |
 | `Connection timed out` in the field | Check you're on the `LiDRON` Wi-Fi and the Pi is powered. |
 
