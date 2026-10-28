@@ -12,7 +12,6 @@ from px4_msgs.msg import (
     VehicleAttitude,
     VehicleCommand,
     VehicleCommandAck,
-    VehicleLandDetected,
     VehicleLocalPosition,
     VehicleStatus,
 )
@@ -77,9 +76,6 @@ class MissionNode(Node):
             VehicleAttitude, "/fmu/out/vehicle_attitude", self._on_attitude, px4_qos
         )
         self.create_subscription(
-            VehicleLandDetected, "/fmu/out/vehicle_land_detected", self._on_land, px4_qos
-        )
-        self.create_subscription(
             VehicleCommandAck, "/fmu/out/vehicle_command_ack", self._on_command_ack, px4_qos
         )
         self.create_subscription(
@@ -107,7 +103,6 @@ class MissionNode(Node):
         self.original_destination: tuple[float, float, float] | None = None
         self.yaw = 0.0
         self.vehicle_status: VehicleStatus | None = None
-        self.landed = True
         self.stamps: dict[str, float | None] = {
             "position": None,
             "depth": None,
@@ -151,6 +146,7 @@ class MissionNode(Node):
         values = {
             "auto_start": False,
             "hardware_mode": False,
+            "require_lidar": True,
             "cruise_altitude_m": 5.0,
             "arrival_tolerance_m": 0.75,
             "sensor_timeout_s": 1.0,
@@ -205,9 +201,6 @@ class MissionNode(Node):
     def _on_attitude(self, msg: VehicleAttitude) -> None:
         w, x, y, z = (float(value) for value in msg.q)
         self.yaw = math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
-
-    def _on_land(self, msg: VehicleLandDetected) -> None:
-        self.landed = bool(msg.landed)
 
     def _on_command_ack(self, msg: VehicleCommandAck) -> None:
         self.last_command_ack = int(msg.command), int(msg.result)
@@ -319,7 +312,9 @@ class MissionNode(Node):
     def _health_ok(self) -> bool:
         now = self._now()
         timeout = float(self.get_parameter("sensor_timeout_s").value)
-        return all(data_is_fresh(now, self.stamps[key], timeout) for key in self.stamps)
+        require_lidar = bool(self.get_parameter("require_lidar").value)
+        keys = [key for key in self.stamps if key != "lidar" or require_lidar]
+        return all(data_is_fresh(now, self.stamps[key], timeout) for key in keys)
 
     def _tick(self) -> None:
         self._refresh_grid()
@@ -432,7 +427,8 @@ class MissionNode(Node):
         assert self.position
         self._setpoint(*self.position, self.yaw)
         required = int(self.get_parameter("landing_confirmations").value)
-        if self.landing_confirmations >= required:
+        # Without a LiDAR there is no landing verdict, so land at the destination.
+        if not self.get_parameter("require_lidar").value or self.landing_confirmations >= required:
             self._command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
             self._transition(MissionState.LANDING)
             return
@@ -467,7 +463,9 @@ class MissionNode(Node):
             self._transition(MissionState.REPLANNING)
 
     def _wait_for_landing(self) -> None:
-        if self.landed:
+        # PX4 1.15 does not publish vehicle_land_detected over DDS; it disarms after touchdown.
+        status = self.vehicle_status
+        if status is not None and status.arming_state == VehicleStatus.ARMING_STATE_DISARMED:
             self._transition(MissionState.COMPLETE)
 
     def _hold(self) -> None:
