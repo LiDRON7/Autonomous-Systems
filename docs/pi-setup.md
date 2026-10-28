@@ -4,6 +4,8 @@ How to wire everything to the Raspberry Pi 5 (`lidron-cranberry`), start the con
 
 To get into the Pi, see [connect-to-pi.md](connect-to-pi.md).
 
+If something that used to work stops working, read [pi-known-issues.md](https://github.com/LiDRON7/Sensor-Control-Data-Gathering/blob/flight-test/docs/pi-known-issues.md) first. It lists every problem we hit and how to fix it.
+
 ## 1. Connect the hardware
 
 | Part | Plug it into | Used by |
@@ -129,6 +131,8 @@ When all 7 pass, do the props-off dry run ([Autonomous-Systems #84](https://gith
 Indoors, the GPS has no fix, so check 6 lists `gps` as stale. Run it outside.
 
 ## If something fails
+
+Each of these is explained in more detail in [pi-known-issues.md](https://github.com/LiDRON7/Sensor-Control-Data-Gathering/blob/flight-test/docs/pi-known-issues.md).
 
 | Problem | Fix |
 | --- | --- |

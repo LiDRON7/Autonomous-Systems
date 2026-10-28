@@ -63,6 +63,7 @@ The drone takes off to 5 m and flies toward the goal. It replans when the camera
 
 - [docs/connect-to-pi.md](docs/connect-to-pi.md): how to SSH into the drone's Pi, at the university or in the field.
 - [docs/pi-setup.md](docs/pi-setup.md): wire the drone's Pi, start the containers and check everything works.
+- [Pi known issues](https://github.com/LiDRON7/Sensor-Control-Data-Gathering/blob/flight-test/docs/pi-known-issues.md): every problem we hit on the Pi, why, and the fix.
 - [docs/topics.md](docs/topics.md): every topic and service, who sends it and who uses it.
 - [docs/reference.md](docs/reference.md): parameters, tests and troubleshooting.
 - `docs/architecture/`: the diagrams. Open the `.excalidraw` files at [excalidraw.com](https://excalidraw.com) to edit them.
