@@ -52,6 +52,8 @@ mission:
     map.size_m: 30.0
     map.inflation_m: 1.0
     map.expiry_s: 2.0
+    # Provisional zero-rotation mount from PX4 v1.15.0 + local x500_depth SDF.
+    map.sensor_translation_flu_m: [0.13233, 0.0, 0.26078]
     map.min_height_m: -1.5
     map.max_height_m: 1.5
     landing_confirmations: 8
