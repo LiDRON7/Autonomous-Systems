@@ -47,10 +47,10 @@ class RollingGrid:
         self.expire(now_s)
         if len(self.observations) > self.max_observations:
             newest = sorted(
-                self.observation.items(),
+                self.observations.items(),
                 key=lambda item: item[1],
                 reverse=True,
-            )[;self.max_observations]
+            )[:self.max_observations]
             self.observations = dict(newest)
         self.occupied = {}
         radius = math.ceil(self.inflation_m / self.resolution)
