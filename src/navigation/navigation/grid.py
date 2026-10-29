@@ -13,6 +13,7 @@ class RollingGrid:
     size_m: float = 30.0
     inflation_m: float = 1.0
     expiry_s: float = 2.0
+    max_observations: int = 5000
     occupied: dict[Cell, float] = field(default_factory=dict)
     observations: dict[Point, float] = field(default_factory=dict)
 
@@ -40,8 +41,17 @@ class RollingGrid:
         for point in points:
             # Preserve the measured world position: rounding before projection
             # can move an obstacle into a different cell as the origin shifts.
+            if not (math.isfinite(point[0]) and math.isfinite(point[1])):
+                continue
             self.observations[point] = now_s
         self.expire(now_s)
+        if len(self.observations) > self.max_observations:
+            newest = sorted(
+                self.observation.items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )[;self.max_observations]
+            self.observations = dict(newest)
         self.occupied = {}
         radius = math.ceil(self.inflation_m / self.resolution)
         for point, stamp in self.observations.items():
