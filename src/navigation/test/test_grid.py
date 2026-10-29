@@ -27,3 +27,43 @@ def test_world_cell_round_trip_stays_within_resolution():
     restored = grid.to_world(grid.to_cell(point, origin), origin)
     assert abs(restored[0] - point[0]) <= grid.resolution / 2
     assert abs(restored[1] - point[1]) <= grid.resolution / 2
+
+
+def test_observation_is_projected_without_world_rounding():
+    grid = RollingGrid(resolution=1.0, size_m=10.0, inflation_m=0.0)
+    grid.observe([(0.8, 0.8)], (0.0, 0.0), now_s=1.0)
+    assert set(grid.occupied) == {(0, 0)}
+    grid.observe([], (0.9, 0.9), now_s=1.5)
+    assert not grid.occupied
+
+
+def test_recentering_also_expires_old_obstacles():
+    grid = RollingGrid(resolution=1.0, inflation_m=0.0, expiry_s=2.0)
+    grid.observe([(5.2, 5.2)], (0.0, 0.0), now_s=1.0)
+    grid.observe([], (1.0, 1.0), now_s=4.0)
+    assert not grid.occupied
+
+
+
+def test_observation_storage_is_bounded():
+    grid = RollingGrid(
+        resolution=1.0,
+        size_m=20.0,
+        inflation_m=0.0,
+        expiry_s=10.0,
+        max_observations=100,
+    )
+    origin = (0.0, 0.0)
+
+    points = [
+        (float(i) / 1000.0, 5.0)
+        for i in range(1000)
+    ]
+    grid.observe(points, origin, now_s=1.0)
+    assert len(grid.observations) <= 100
+    grid.observe([(10.0, 10.0)], origin, now_s=2.0)
+    assert len(grid.observations) <= 100
+    assert (10.0, 10.0) in grid.observations
+    grid.observe([], origin, now_s=20.0)
+    assert len(grid.observations) == 0
+    assert not grid.occupied
