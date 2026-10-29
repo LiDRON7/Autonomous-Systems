@@ -110,11 +110,22 @@ The first build takes about an hour on the Pi. After that, leave out `--build` a
 
 ## 5. Check it works
 
-Add this helper first. It runs a command inside the autonomy container:
+Checks 3, 5 and 6 run inside the autonomy container. To save typing, paste this line into the Pi's terminal once (each time you log in). It prints nothing, it just creates a shortcut called `auto`:
 
 ```bash
 auto() { docker exec lidron_autonomy bash -c "source /opt/ros/jazzy/setup.bash && source /autonomy/install/setup.bash && $*"; }
 ```
+
+Then put `auto` in front of any `ros2` command:
+
+```bash
+auto ros2 topic list
+auto ros2 topic hz /fmu/out/vehicle_status
+```
+
+Press `Ctrl+C` to stop commands that keep running, like `topic hz`. Don't run `auto` alone or the `docker exec ...` part by itself: it fails with `syntax error: unexpected end of file`.
+
+To work inside the container instead, run `docker exec -it lidron_autonomy bash`, then `source /autonomy/install/setup.bash`, and type `ros2` commands without `auto`. Type `exit` to leave.
 
 | # | Check | Command | Good result |
 | --- | --- | --- | --- |
