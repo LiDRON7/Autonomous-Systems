@@ -18,12 +18,14 @@ If something that used to work stops working, read [pi-known-issues.md](https://
 
 TELEM2 uses 3 of its 6 wires. Count from pin 1, the red wire.
 
+The data wires cross: the Pixhawk's TX goes to the Pi's RX, and the Pixhawk's RX goes to the Pi's TX. RX to RX gets no data at all. Turn the Pi off before you touch its pins.
+
 | TELEM2 wire | Pi pin |
 | --- | --- |
-| 1 (5 V) | nothing, tape it off |
-| 2 (TX, orange) | 10 |
-| 3 (RX, yellow) | 8 |
-| 6 (GND) | 6 |
+| 1 (5 V, red) | nothing, tape it off |
+| 2 (Pixhawk TX, white) | 10 (Pi RXD) |
+| 3 (Pixhawk RX, yellow) | 8 (Pi TXD) |
+| 6 (GND, black) | 6 (GND) |
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/LiDRON7/Sensor-Control-Data-Gathering/flight-test/docs/architecture/telem2-wiring-dark.png">
@@ -77,6 +79,17 @@ On the Pi, all three are in the outer row (along the board edge): the 3rd, 4th a
    | `UXRCE_DDS_CFG` | `102` (TELEM2) |
    | `SER_TEL2_BAUD` | `921600` |
    | `MAV_1_CONFIG` | `0` |
+
+   Set them in QGroundControl, not with a pymavlink script. A script that sends the number the wrong way saves `UXRCE_DDS_CFG` as `1120665600`, even though reading it back over MAVLink still shows `102`. PX4 then never starts the DDS client on TELEM2.
+
+4. After the reboot, check it in the MAVLink Console (Analyze Tools → MAVLink Console):
+
+   ```text
+   param show UXRCE_DDS_CFG
+   uxrce_dds_client status
+   ```
+
+   The first must print exactly `102`, and the second `Running`. If it says `not running`, set `UXRCE_DDS_CFG` again and reboot.
 
 ## 4. Start everything
 
@@ -147,7 +160,7 @@ Each of these is explained in more detail in [pi-known-issues.md](https://github
 
 | Problem | Fix |
 | --- | --- |
-| `px4-agent` has no `create_client` | First check `systemctl status serial-getty@ttyAMA0` says masked (step 2.4). Then: the TELEM2 wires are loose or TX/RX are swapped. With the agent stopped, `stty -F /dev/ttyAMA0 921600 raw; timeout 4 cat /dev/ttyAMA0 \| wc -c` must print more than 0. Also check `UXRCE_DDS_CFG = 102`. |
+| `px4-agent` has no `create_client` | 1) `uxrce_dds_client status` in the MAVLink Console says `Running` (step 3.4). 2) `systemctl status serial-getty@ttyAMA0` says masked (step 2.4). 3) The TELEM2 wires are tight and TX/RX are crossed. With the agent stopped, `stty -F /dev/ttyAMA0 921600 raw; timeout 4 cat /dev/ttyAMA0 \| wc -c` must print more than 0. |
 | `oak-d` keeps restarting with `No available devices` or `Insufficient permissions` | The udev rule from step 2 is missing. Add it, then unplug and replug the camera. |
 | Camera topics exist in `oak-d` but not in autonomy | Every container needs `FASTDDS_BUILTIN_TRANSPORTS=UDPv4` (it's in both compose files). |
 | Camera rate is low | It's in a black USB 2 port. Move it to a blue one. |
