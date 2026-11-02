@@ -127,6 +127,7 @@ class MissionNode(Node):
         self.path: list[tuple[float, float]] = []
         self.path_index = 0
         self.hold_point: tuple[float, float, float] | None = None
+        self.operator_hold = False
         self.state_started = self._now()
         self.mission_started: float | None = None
         self.offboard_warmup = 0
@@ -291,8 +292,13 @@ class MissionNode(Node):
             if self.state not in ACTIVE_STATES:
                 response.success, response.message = False, "mission is not active"
                 return response
+            self.operator_hold = True
             self._transition(MissionState.HOLD)
             response.success, response.message = True, "mission holding"
+            return response
+        if self.state == MissionState.HOLD:
+            self.operator_hold = False
+            response.success, response.message = True, "mission resume requested"
             return response
         if self.destination is None:
             response.success, response.message = False, "set a destination first"
@@ -300,6 +306,7 @@ class MissionNode(Node):
         if self.state not in {MissionState.IDLE, MissionState.COMPLETE, MissionState.ABORT}:
             response.success, response.message = False, "mission is already active"
             return response
+        self.operator_hold = False
         self.mission_started = self._now()
         self.offboard_warmup = 0
         self.search_index = 0
@@ -463,7 +470,7 @@ class MissionNode(Node):
 
     def _recover_from_hold(self) -> None:
         self._hold()
-        if self._health_ok() and not self.obstacle_detected:
+        if not self.operator_hold and self._health_ok() and not self.obstacle_detected:
             self._transition(MissionState.REPLANNING)
 
     def _wait_for_landing(self) -> None:
