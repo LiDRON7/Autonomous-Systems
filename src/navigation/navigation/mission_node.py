@@ -126,6 +126,7 @@ class MissionNode(Node):
         self.mission_started: float | None = None
         self.offboard_warmup = 0
         self.last_command_ack: tuple[int, int] | None = None
+        self.pending_commands: set[int] = set()
         self.search_index = 0
         self.timer = self.create_timer(0.1, self._tick)
         auto_start = bool(self.get_parameter("auto_start").value)
@@ -203,13 +204,36 @@ class MissionNode(Node):
         self.yaw = math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
 
     def _on_command_ack(self, msg: VehicleCommandAck) -> None:
-        self.last_command_ack = int(msg.command), int(msg.result)
-        accepted = {
-            VehicleCommandAck.VEHICLE_CMD_RESULT_ACCEPTED,
-            VehicleCommandAck.VEHICLE_CMD_RESULT_IN_PROGRESS,
-        }
-        if int(msg.result) not in accepted and self.state in ACTIVE_STATES:
-            self._safe_abort(f"PX4 rejected command {msg.command}: result {msg.result}")
+        command = int(msg.command)
+        result = int(msg.result)
+
+        if bool(msg.from_external):
+            self.get_logger().debug(
+                f"Ignored external acknowledgement for command {command}: "
+                f"result {result}"
+            )
+            return
+
+        if command not in self.pending_commands:
+            self.get_logger().debug(
+                f"Ignored acknowledgement for untracked command {command}: "
+                f"result {result}"
+            )
+            return
+        self.last_command_ack = command, result
+
+        if result == VehicleCommandAck.VEHICLE_CMD_RESULT_IN_PROGRESS:
+            return
+
+        self.pending_commands.discard(command)
+
+        if (
+            result != VehicleCommandAck.VEHICLE_CMD_RESULT_ACCEPTED
+            and self.state in ACTIVE_STATES
+        ):
+            self._safe_abort(
+                f"PX4 rejected Autonomous command {command}: result {result}"
+            )
 
     def _on_obstacle(self, msg: Bool) -> None:
         self.obstacle_detected = bool(msg.data)
@@ -504,6 +528,7 @@ class MissionNode(Node):
         msg.source_component = 1
         msg.from_external = True
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
+        self.pending_commands.add(int(command))
         self.command_pub.publish(msg)
 
     def _publish_path(self) -> None:
