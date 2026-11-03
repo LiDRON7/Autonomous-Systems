@@ -3,10 +3,10 @@
 from dataclasses import dataclass
 
 import rclpy
-from px4_msgs.msg import VehicleLocalPosition, VehicleStatus
+from px4_msgs.msg import SensorGps, VehicleLocalPosition, VehicleStatus
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
-from sensor_msgs.msg import Image, NavSatFix, PointCloud2
+from sensor_msgs.msg import Image, PointCloud2
 from std_srvs.srv import Trigger
 
 
@@ -20,6 +20,7 @@ class DiagnosticsNode(Node):
     def __init__(self) -> None:
         super().__init__("diagnostics")
         self.declare_parameter("diagnostic_timeout_s", 2.0)
+        self.declare_parameter("require_lidar", True)
         self.health = {
             "oakd_depth_image": TopicHealth(),
             "oakd_depth_points": TopicHealth(),
@@ -39,7 +40,10 @@ class DiagnosticsNode(Node):
             PointCloud2, "/oakd/depth/points", self._callback("oakd_depth_points"), 10
         )
         self.create_subscription(PointCloud2, "/lidar/points", self._callback("lidar_points"), 10)
-        self.create_subscription(NavSatFix, "/gps", self._callback("gps"), 10)
+        # PX4 publishes GPS on hardware and in SITL, so no separate /gps driver is needed.
+        self.create_subscription(
+            SensorGps, "/fmu/out/vehicle_gps_position", self._callback("gps"), px4_qos
+        )
         self.create_subscription(
             VehicleLocalPosition,
             "/fmu/out/vehicle_local_position",
@@ -62,15 +66,17 @@ class DiagnosticsNode(Node):
 
     def _check(self, _request, response):
         timeout = float(self.get_parameter("diagnostic_timeout_s").value)
+        require_lidar = bool(self.get_parameter("require_lidar").value)
         now = self._now()
         stale = [
             name
             for name, health in self.health.items()
-            if health.received_s is None or now - health.received_s > timeout
+            if (name != "lidar_points" or require_lidar)
+            and (health.received_s is None or now - health.received_s > timeout)
         ]
         missing_frames = [
             name
-            for name in ("oakd_depth_image", "oakd_depth_points", "lidar_points", "gps")
+            for name in ("oakd_depth_image", "oakd_depth_points", "lidar_points")
             if self.health[name].received_s is not None and not self.health[name].frame_id
         ]
         response.success = not stale and not missing_frames

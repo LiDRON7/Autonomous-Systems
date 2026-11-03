@@ -12,7 +12,6 @@ from px4_msgs.msg import (
     VehicleAttitude,
     VehicleCommand,
     VehicleCommandAck,
-    VehicleLandDetected,
     VehicleLocalPosition,
     VehicleStatus,
 )
@@ -77,9 +76,6 @@ class MissionNode(Node):
             VehicleAttitude, "/fmu/out/vehicle_attitude", self._on_attitude, px4_qos
         )
         self.create_subscription(
-            VehicleLandDetected, "/fmu/out/vehicle_land_detected", self._on_land, px4_qos
-        )
-        self.create_subscription(
             VehicleCommandAck, "/fmu/out/vehicle_command_ack", self._on_command_ack, px4_qos
         )
         self.create_subscription(
@@ -107,7 +103,6 @@ class MissionNode(Node):
         self.original_destination: tuple[float, float, float] | None = None
         self.yaw = 0.0
         self.vehicle_status: VehicleStatus | None = None
-        self.landed = True
         self.stamps: dict[str, float | None] = {
             "position": None,
             "depth": None,
@@ -132,6 +127,7 @@ class MissionNode(Node):
         self.mission_started: float | None = None
         self.offboard_warmup = 0
         self.last_command_ack: tuple[int, int] | None = None
+        self.pending_commands: set[int] = set()
         self.search_index = 0
         self.timer = self.create_timer(0.1, self._tick)
         auto_start = bool(self.get_parameter("auto_start").value)
@@ -152,6 +148,7 @@ class MissionNode(Node):
         values = {
             "auto_start": False,
             "hardware_mode": False,
+            "require_lidar": True,
             "cruise_altitude_m": 5.0,
             "arrival_tolerance_m": 0.75,
             "sensor_timeout_s": 1.0,
@@ -207,17 +204,45 @@ class MissionNode(Node):
         w, x, y, z = (float(value) for value in msg.q)
         self.yaw = math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
 
-    def _on_land(self, msg: VehicleLandDetected) -> None:
-        self.landed = bool(msg.landed)
-
     def _on_command_ack(self, msg: VehicleCommandAck) -> None:
-        self.last_command_ack = int(msg.command), int(msg.result)
-        accepted = {
-            VehicleCommandAck.VEHICLE_CMD_RESULT_ACCEPTED,
-            VehicleCommandAck.VEHICLE_CMD_RESULT_IN_PROGRESS,
-        }
-        if int(msg.result) not in accepted and self.state in ACTIVE_STATES:
-            self._safe_abort(f"PX4 rejected command {msg.command}: result {msg.result}")
+        command = int(msg.command)
+        result = int(msg.result)
+
+        if bool(msg.from_external):
+            self.get_logger().debug(
+                f"Ignored external acknowledgement for command {command}: "
+                f"result {result}"
+            )
+            return
+
+        # PX4 addresses each ack to the command's sender; _command sends as 1/1.
+        if (int(msg.target_system), int(msg.target_component)) != (1, 1):
+            self.get_logger().debug(
+                f"Ignored acknowledgement for another sender's command {command}: "
+                f"result {result}"
+            )
+            return
+
+        if command not in self.pending_commands:
+            self.get_logger().debug(
+                f"Ignored acknowledgement for untracked command {command}: "
+                f"result {result}"
+            )
+            return
+        self.last_command_ack = command, result
+
+        if result == VehicleCommandAck.VEHICLE_CMD_RESULT_IN_PROGRESS:
+            return
+
+        self.pending_commands.discard(command)
+
+        if (
+            result != VehicleCommandAck.VEHICLE_CMD_RESULT_ACCEPTED
+            and self.state in ACTIVE_STATES
+        ):
+            self._safe_abort(
+                f"PX4 rejected Autonomous command {command}: result {result}"
+            )
 
     def _on_obstacle(self, msg: Bool) -> None:
         self.obstacle_detected = bool(msg.data)
@@ -326,7 +351,9 @@ class MissionNode(Node):
     def _health_ok(self) -> bool:
         now = self._now()
         timeout = float(self.get_parameter("sensor_timeout_s").value)
-        return all(data_is_fresh(now, self.stamps[key], timeout) for key in self.stamps)
+        require_lidar = bool(self.get_parameter("require_lidar").value)
+        keys = [key for key in self.stamps if key != "lidar" or require_lidar]
+        return all(data_is_fresh(now, self.stamps[key], timeout) for key in keys)
 
     def _tick(self) -> None:
         self._refresh_grid()
@@ -439,7 +466,8 @@ class MissionNode(Node):
         assert self.position
         self._setpoint(*self.position, self.yaw)
         required = int(self.get_parameter("landing_confirmations").value)
-        if self.landing_confirmations >= required:
+        # Without a LiDAR there is no landing verdict, so land at the destination.
+        if not self.get_parameter("require_lidar").value or self.landing_confirmations >= required:
             self._command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
             self._transition(MissionState.LANDING)
             return
@@ -474,7 +502,9 @@ class MissionNode(Node):
             self._transition(MissionState.REPLANNING)
 
     def _wait_for_landing(self) -> None:
-        if self.landed:
+        # PX4 1.15 does not publish vehicle_land_detected over DDS; it disarms after touchdown.
+        status = self.vehicle_status
+        if status is not None and status.arming_state == VehicleStatus.ARMING_STATE_DISARMED:
             self._transition(MissionState.COMPLETE)
 
     def _hold(self) -> None:
@@ -513,6 +543,7 @@ class MissionNode(Node):
         msg.source_component = 1
         msg.from_external = True
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
+        self.pending_commands.add(int(command))
         self.command_pub.publish(msg)
 
     def _publish_path(self) -> None:
