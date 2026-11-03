@@ -44,7 +44,6 @@ def test_recentering_also_expires_old_obstacles():
     assert not grid.occupied
 
 
-
 def test_observation_storage_is_bounded():
     grid = RollingGrid(
         resolution=1.0,
@@ -67,3 +66,11 @@ def test_observation_storage_is_bounded():
     grid.observe([], origin, now_s=20.0)
     assert len(grid.observations) == 0
     assert not grid.occupied
+
+
+def test_cap_keeps_obstacle_late_in_a_large_frame():
+    grid = RollingGrid(resolution=0.5, size_m=30.0, inflation_m=0.0)
+    wall = [(1.0 + i * 1e-3, 1.0) for i in range(6000)]
+    grid.observe(wall + [(10.0, 10.0)], (0.0, 0.0), now_s=1.0)
+    assert grid.to_cell((10.0, 10.0), (0.0, 0.0)) in grid.occupied
+    assert len(grid.observations) <= grid.max_observations

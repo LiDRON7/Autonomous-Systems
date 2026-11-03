@@ -46,12 +46,13 @@ class RollingGrid:
             self.observations[point] = now_s
         self.expire(now_s)
         if len(self.observations) > self.max_observations:
-            newest = sorted(
-                self.observations.items(),
-                key=lambda item: item[1],
-                reverse=True,
-            )[:self.max_observations]
-            self.observations = dict(newest)
+            # One frame shares a stamp, so a plain cut drops whatever comes late
+            # in scan order. Thin per cell first so no obstacle cell disappears.
+            per_cell = {}
+            for point, stamp in sorted(self.observations.items(), key=lambda item: item[1]):
+                per_cell[self.to_cell(point, origin)] = point, stamp
+            newest = sorted(per_cell.values(), key=lambda item: item[1], reverse=True)
+            self.observations = dict(newest[:self.max_observations])
         self.occupied = {}
         radius = math.ceil(self.inflation_m / self.resolution)
         for point, stamp in self.observations.items():
