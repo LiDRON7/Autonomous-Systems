@@ -79,17 +79,36 @@ On the Pi, all three are in the outer row (along the board edge): the 3rd, 4th a
    | `UXRCE_DDS_CFG` | `102` (TELEM2) |
    | `SER_TEL2_BAUD` | `921600` |
    | `MAV_1_CONFIG` | `0` |
+   | `COM_OBL_RC_ACT` | `4` (Land mode) |
 
    Set them in QGroundControl, not with a pymavlink script. A script that sends the number the wrong way saves `UXRCE_DDS_CFG` as `1120665600`, even though reading it back over MAVLink still shows `102`. PX4 then never starts the DDS client on TELEM2.
 
-4. After the reboot, check it in the MAVLink Console (Analyze Tools → MAVLink Console):
+   **Offboard-loss failsafe:** `COM_OBL_RC_ACT = 4` configures PX4 to enter Land mode when offboard control is lost and the applicable failsafe is triggered. The currently verified timeout is `COM_OF_LOSS_T = 1.0 s`. This provides a fallback if the autonomy system stops sending offboard control updates.
+
+4. After the reboot, check the parameters in the MAVLink Console (Analyze Tools → MAVLink Console):
 
    ```text
    param show UXRCE_DDS_CFG
+   param show SER_TEL2_BAUD
+   param show MAV_1_CONFIG
+   param show COM_OBL_RC_ACT
    uxrce_dds_client status
    ```
 
-   The first must print exactly `102`, and the second `Running`. If it says `not running`, set `UXRCE_DDS_CFG` again and reboot.
+   Expected parameter values:
+
+   ```text
+   UXRCE_DDS_CFG : 102
+   SER_TEL2_BAUD : 921600
+   MAV_1_CONFIG : 0
+   COM_OBL_RC_ACT : 4
+   ```
+
+   The DDS client should report `Running`. It may report `Running, disconnected` when the Raspberry Pi's XRCE-DDS agent is not connected.
+
+   If the client says `not running`, set `UXRCE_DDS_CFG` again and reboot.
+
+   **Verified on Pixhawk:** PX4 1.15.4dev, with `COM_OBL_RC_ACT = 4` (Land mode), confirmed using `param show COM_OBL_RC_ACT` in QGroundControl's MAVLink Console.
 
 ## 4. Start everything
 
