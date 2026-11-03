@@ -16,11 +16,13 @@ class VehicleCommandAck:
     VEHICLE_CMD_RESULT_IN_PROGRESS = 5
 
 
-def acknowledgement(command, result, from_external=False):
+def acknowledgement(command, result, from_external=False, target=(1, 1)):
     return SimpleNamespace(
         command=command,
         result=result,
         from_external=from_external,
+        target_system=target[0],
+        target_component=target[1],
     )
 
 
@@ -100,6 +102,22 @@ def test_external_rejection_for_pending_command_is_ignored():
     assert node.last_command_ack is None
 
 
+def test_ground_station_rejection_of_pending_command_is_ignored():
+    node = command_node()
+    node._command(400)
+
+    node._on_command_ack(
+        acknowledgement(
+            400,
+            VehicleCommandAck.VEHICLE_CMD_RESULT_FAILED,
+            target=(255, 190),
+        )
+    )
+
+    assert 400 in node.pending_commands
+    assert not node.aborts
+
+
 def test_untracked_internal_rejection_is_ignored():
     node = command_node()
 
@@ -127,7 +145,6 @@ def test_owned_rejection_aborts_active_mission():
 
     assert 400 not in node.pending_commands
     assert node.aborts
-
 
 
 def test_owned_acceptance_clears_pending_command():

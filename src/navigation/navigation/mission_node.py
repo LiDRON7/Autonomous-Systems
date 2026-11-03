@@ -214,6 +214,14 @@ class MissionNode(Node):
             )
             return
 
+        # PX4 addresses each ack to the command's sender; _command sends as 1/1.
+        if (int(msg.target_system), int(msg.target_component)) != (1, 1):
+            self.get_logger().debug(
+                f"Ignored acknowledgement for another sender's command {command}: "
+                f"result {result}"
+            )
+            return
+
         if command not in self.pending_commands:
             self.get_logger().debug(
                 f"Ignored acknowledgement for untracked command {command}: "
