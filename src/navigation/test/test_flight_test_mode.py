@@ -23,7 +23,8 @@ def mission(require_lidar, **state):
     parameters = {'require_lidar': require_lidar, 'sensor_timeout_s': 1.0,
                   'landing_confirmations': 8, 'landing_check_timeout_s': 5.0}
     node = SimpleNamespace(now=10.0, state=MissionState.LANDING_CHECK, state_started=10.0,
-                           position=(0, 0, -5), yaw=0.0, landing_confirmations=0,
+                           position=(0, 0, -5), landing_check_point=None,
+                           yaw=0.0, landing_confirmations=0,
                            vehicle_status=None, commands=[],
                            stamps={'position': 10.0, 'depth': 10.0, 'lidar': None, 'status': 10.0})
     node.__dict__.update(state)

@@ -122,6 +122,8 @@ class MissionNode(Node):
         self.path: list[tuple[float, float]] = []
         self.path_index = 0
         self.hold_point: tuple[float, float, float] | None = None
+        self.takeoff_point: tuple[float, float, float] | None = None
+        self.landing_check_point: tuple[float, float, float] | None = None
         self.operator_hold = False
         self.state_started = self._now()
         self.mission_started: float | None = None
@@ -183,8 +185,12 @@ class MissionNode(Node):
         self.get_logger().info(f"Mission {self.state.value} -> {state.value}")
         self.state = state
         self.state_started = self._now()
+        if state == MissionState.PREFLIGHT:
+            self.takeoff_point = None
+            self.landing_check_point = None
         if state == MissionState.LANDING_CHECK:
             self.landing_confirmations = 0
+            self.landing_check_point = self.position
         if state == MissionState.HOLD and self.position:
             self.hold_point = self.position
 
@@ -392,8 +398,10 @@ class MissionNode(Node):
     def _preflight(self) -> None:
         if self.position is None or not self._health_ok():
             return
+        if self.takeoff_point is None:
+            self.takeoff_point = self.position
         cruise_z = -abs(float(self.get_parameter("cruise_altitude_m").value))
-        self._setpoint(self.position[0], self.position[1], cruise_z, self.yaw)
+        self._setpoint(self.takeoff_point[0], self.takeoff_point[1], cruise_z, self.yaw)
         self.offboard_warmup += 1
         if self.offboard_warmup >= 10:
             self._command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, param1=1.0, param2=6.0)
@@ -402,8 +410,10 @@ class MissionNode(Node):
 
     def _takeoff(self) -> None:
         assert self.position is not None
+        if self.takeoff_point is None:
+            self.takeoff_point = self.position
         cruise_z = -abs(float(self.get_parameter("cruise_altitude_m").value))
-        self._setpoint(self.position[0], self.position[1], cruise_z, self.yaw)
+        self._setpoint(self.takeoff_point[0], self.takeoff_point[1], cruise_z, self.yaw)
         if abs(self.position[2] - cruise_z) <= 0.5:
             self._transition(MissionState.PLANNING)
 
@@ -464,7 +474,9 @@ class MissionNode(Node):
 
     def _landing_check(self) -> None:
         assert self.position
-        self._setpoint(*self.position, self.yaw)
+        if self.landing_check_point is None:
+            self.landing_check_point = self.position
+        self._setpoint(*self.landing_check_point, self.yaw)
         required = int(self.get_parameter("landing_confirmations").value)
         # Without a LiDAR there is no landing verdict, so land at the destination.
         if not self.get_parameter("require_lidar").value or self.landing_confirmations >= required:
