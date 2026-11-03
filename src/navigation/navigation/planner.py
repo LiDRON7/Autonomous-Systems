@@ -35,7 +35,12 @@ def landing_search_offset(index: int, step_m: float) -> tuple[float, float]:
 
 def astar(start: Cell, goal: Cell, occupied: set[Cell], width: int) -> list[Cell]:
     """Return a lowest-cost 8-connected route or an empty list."""
-    if start in occupied or goal in occupied:
+    if (
+        width <= 0
+        or any(not (0 <= x < width and 0 <= y < width) for x, y in (start, goal))
+        or start in occupied
+        or goal in occupied
+    ):
         return []
     frontier: list[tuple[float, Cell]] = [(0.0, start)]
     came_from: dict[Cell, Cell | None] = {start: None}
@@ -48,7 +53,12 @@ def astar(start: Cell, goal: Cell, occupied: set[Cell], width: int) -> list[Cell
             nxt = current[0] + dx, current[1] + dy
             if not (0 <= nxt[0] < width and 0 <= nxt[1] < width):
                 continue
-            if nxt in occupied:
+            if nxt in occupied or (
+                dx and dy and (
+                    (current[0] + dx, current[1]) in occupied
+                    or (current[0], current[1] + dy) in occupied
+                )
+            ):
                 continue
             step = math.sqrt(2.0) if dx and dy else 1.0
             candidate = cost[current] + step
@@ -69,24 +79,42 @@ def astar(start: Cell, goal: Cell, occupied: set[Cell], width: int) -> list[Cell
 
 
 def _line_clear(a: Cell, b: Cell, occupied: set[Cell]) -> bool:
-    steps = max(abs(b[0] - a[0]), abs(b[1] - a[1]))
-    if steps == 0:
-        return True
-    for step in range(steps + 1):
-        ratio = step / steps
-        cell = (
-            round(a[0] + (b[0] - a[0]) * ratio),
-            round(a[1] + (b[1] - a[1]) * ratio),
-        )
-        if cell in occupied:
+    # Supercover traversal: check every cell touched, including both sides
+    # when a segment passes exactly through a grid corner.
+    x, y = a
+    dx, dy = b[0] - x, b[1] - y
+    nx, ny = abs(dx), abs(dy)
+    sx = 1 if dx > 0 else -1
+    sy = 1 if dy > 0 else -1
+    ix = iy = 0
+    if a in occupied:
+        return False
+    while ix < nx or iy < ny:
+        decision = (1 + 2 * ix) * ny - (1 + 2 * iy) * nx
+        if decision == 0:
+            if (x + sx, y) in occupied or (x, y + sy) in occupied:
+                return False
+            x += sx
+            y += sy
+            ix += 1
+            iy += 1
+        elif decision < 0:
+            x += sx
+            ix += 1
+        else:
+            y += sy
+            iy += 1
+        if (x, y) in occupied:
             return False
     return True
 
 
 def simplify(route: list[Cell], occupied: set[Cell]) -> list[Cell]:
     """Remove intermediate cells while retaining collision-free segments."""
+    if any(not _line_clear(a, b, occupied) for a, b in zip(route, route[1:])):
+        return []
     if len(route) < 3:
-        return route
+        return [] if route and route[0] in occupied else route
     result = [route[0]]
     anchor = 0
     while anchor < len(route) - 1:

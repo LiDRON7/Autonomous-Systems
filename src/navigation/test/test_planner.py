@@ -35,3 +35,29 @@ def test_landing_search_rejects_invalid_values():
         landing_search_offset(-1, 1.0)
     with pytest.raises(ValueError):
         landing_search_offset(0, 0.0)
+
+
+@pytest.mark.parametrize('start,goal,width', [((-1, 0), (2, 2), 5), ((0, 0), (5, 0), 5), ((0, 0), (0, 0), 0)])
+def test_rejects_out_of_bounds(start, goal, width):
+    assert astar(start, goal, set(), width) == []
+
+
+def test_cannot_squeeze_between_diagonal_obstacles():
+    assert astar((0, 0), (1, 1), {(1, 0), (0, 1)}, 2) == []
+
+
+def test_simplification_checks_cells_between_rounded_samples():
+    from navigation.planner import _line_clear
+    assert not _line_clear((0, 0), (2, 1), {(1, 0)})
+    assert not _line_clear((2, 1), (0, 0), {(1, 0)})
+
+
+def test_simplification_preserves_safe_detour():
+    route = [(0, 0), (0, 1), (0, 2), (1, 2), (2, 2), (2, 1), (2, 0)]
+    result = simplify(route, {(1, 0), (1, 1)})
+    assert result[0] == route[0] and result[-1] == route[-1]
+    assert len(result) > 2
+
+
+def test_simplification_rejects_unsafe_input_segment():
+    assert simplify([(0, 0), (1, 1)], {(1, 0)}) == []
