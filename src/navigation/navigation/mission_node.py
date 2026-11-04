@@ -12,6 +12,7 @@ from px4_msgs.msg import (
     VehicleAttitude,
     VehicleCommand,
     VehicleCommandAck,
+    VehicleLandDetected,
     VehicleLocalPosition,
     VehicleStatus,
 )
@@ -71,6 +72,9 @@ class MissionNode(Node):
         )
         self.create_subscription(
             VehicleStatus, "/fmu/out/vehicle_status", self._on_status, px4_qos
+        )
+        self.create_subscription(
+            VehicleLandDetected, "/fmu/out/vehicle_land_detected", self._on_land, px4_qos
         )
         self.create_subscription(
             VehicleAttitude, "/fmu/out/vehicle_attitude", self._on_attitude, px4_qos
