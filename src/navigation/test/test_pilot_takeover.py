@@ -180,7 +180,8 @@ def test_no_commands_after_takeover_even_past_timeout_and_recovery(node):
         status(node)
         node._on_obstacle(SimpleNamespace(data=False))
         node._on_landing_assessment(SimpleNamespace(data='{"suitable": true}'))
-        node._on_command_ack(VehicleCommandAck(command=176, result=2))
+        node._on_command_ack(VehicleCommandAck(command=176, result=2, from_external=False,
+                                               target_system=1, target_component=1,))
         node._tick()
     assert node.state == MissionState.PILOT_OVERRIDE
     assert counts(node) == before
@@ -285,10 +286,9 @@ def test_normal_hold_recovers_and_landing_completes(node):
     node._tick()
     assert node.state == MissionState.LANDING
     assert node.command_pub.messages[-1].command == VehicleCommand.VEHICLE_CMD_NAV_LAND
-    node._on_land(SimpleNamespace(landed=True))
+    node.vehicle_status = VehicleStatus(arming_state=VehicleStatus.ARMING_STATE_DISARMED)
     node._tick()
     assert node.state == MissionState.COMPLETE
-
 
 @pytest.mark.parametrize("reason", ["timeout", "service", "rejected_ack"])
 def test_normal_abort_still_sends_land(node, reason):
@@ -298,6 +298,8 @@ def test_normal_abort_still_sends_land(node, reason):
     elif reason == "service":
         assert node._abort(None, SimpleNamespace()).success
     else:
-        node._on_command_ack(VehicleCommandAck(command=176, result=2))
+        node._command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE)
+        node._on_command_ack(VehicleCommandAck(command=VehicleCommand.VEHICLE_CMD_DO_SET_MODE,
+                                               result=2, from_external=False, target_system=1, target_component=1,))
     assert node.state == MissionState.ABORT
     assert node.command_pub.messages[-1].command == VehicleCommand.VEHICLE_CMD_NAV_LAND
