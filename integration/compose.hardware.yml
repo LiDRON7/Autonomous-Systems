@@ -1,5 +1,5 @@
 # Autonomy on the drone's Raspberry Pi. PX4 and the sensors come from the
-# Sensor-Control-Data-Gathering containers (px4-agent, oak-d, airborne-bridge).
+# Sensor-Control-Data-Gathering containers (px4-agent, oak-d; airborne-bridge only with the radio-bridge profile).
 services:
   autonomy:
     image: lidron-autonomy:jazzy-px4-1.15
