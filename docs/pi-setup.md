@@ -10,11 +10,15 @@ If something that used to work stops working, read [pi-known-issues.md](https://
 
 | Part | Plug it into | Used by |
 | --- | --- | --- |
-| Pixhawk USB-C | any Pi USB port | `airborne-bridge` (MAVLink to the radio) |
 | Pixhawk TELEM2 | Pi GPIO pins 10, 8 and 6 (see below) | `px4-agent` (autonomy talks to PX4) |
-| SiK radio | any Pi USB port | `airborne-bridge` |
-| OAK-D Pro | a **blue** USB 3 port on the Pi | `oak-d` |
+| SiK radio | Pixhawk **TELEM1**, not the Pi | QGroundControl on the ground radio |
+| OAK-D Pro | data: a **blue** USB 3 port on the Pi. Power: a Y-adapter fed by the 5 V buck | `oak-d` |
+| Pi power | a 5 V / 5 A buck from the battery, before the PM02D | the Pi |
 | H-RTK GPS (10-pin plug) | Pixhawk **GPS1**, not the Pi | PX4 |
+
+Power the camera through the Y-adapter, not from the Pi's USB alone. Without a 5 A USB-C supply, the Pi 5 gives all its USB ports 600 mA combined, and the OAK-D Pro needs about 1 A, so it keeps disconnecting (see issue 10 in [pi-known-issues.md](https://github.com/LiDRON7/Sensor-Control-Data-Gathering/blob/flight-test/docs/pi-known-issues.md#10-the-camera-keeps-disconnecting)).
+
+Don't also plug the radio into the Pi's USB. Its USB port and its TELEM1 cable share one serial line, so the Pi and the Pixhawk talk over each other and QGroundControl can't connect. With the radio on TELEM1, the ground link keeps working even if the Pi crashes. The Pixhawk's USB-C isn't needed in flight.
 
 TELEM2 uses 3 of its 6 wires. Count from pin 1, the red wire.
 
@@ -79,11 +83,16 @@ On the Pi, all three are in the outer row (along the board edge): the 3rd, 4th a
    | `UXRCE_DDS_CFG` | `102` (TELEM2) |
    | `SER_TEL2_BAUD` | `921600` |
    | `MAV_1_CONFIG` | `0` |
+   | `MAV_0_CONFIG` | `101` (TELEM1, the radio; this is the default) |
+   | `SER_TEL1_BAUD` | `57600` (the radio's speed; this is the default) |
    | `COM_OBL_RC_ACT` | `4` (Land mode) |
+   | `MPC_XY_VEL_MAX` | `2.2352` (m/s, about 5 mph; PX4 reads this in m/s, so don't type 5) |
 
    Set them in QGroundControl, not with a pymavlink script. A script that sends the number the wrong way saves `UXRCE_DDS_CFG` as `1120665600`, even though reading it back over MAVLink still shows `102`. PX4 then never starts the DDS client on TELEM2.
 
    **Offboard-loss failsafe:** `COM_OBL_RC_ACT = 4` configures PX4 to enter Land mode when offboard control is lost and the applicable failsafe is triggered. The currently verified timeout is `COM_OF_LOSS_T = 1.0 s`. This provides a fallback if the autonomy system stops sending offboard control updates.
+
+   **Horizontal speed limit:** `MPC_XY_VEL_MAX = 2.2352` m/s (5 mph) limits the horizontal velocity commanded by PX4 during applicable position-controlled flight. Since autonomy sends position setpoints, PX4 determines the speed. This provides a conservative starting limit for the Widow flight tests.
 
 4. After the reboot, check the parameters in the MAVLink Console (Analyze Tools → MAVLink Console):
 
@@ -91,7 +100,10 @@ On the Pi, all three are in the outer row (along the board edge): the 3rd, 4th a
    param show UXRCE_DDS_CFG
    param show SER_TEL2_BAUD
    param show MAV_1_CONFIG
+   param show MAV_0_CONFIG
+   param show SER_TEL1_BAUD
    param show COM_OBL_RC_ACT
+   param show MPC_XY_VEL_MAX
    uxrce_dds_client status
    ```
 
@@ -101,7 +113,10 @@ On the Pi, all three are in the outer row (along the board edge): the 3rd, 4th a
    UXRCE_DDS_CFG : 102
    SER_TEL2_BAUD : 921600
    MAV_1_CONFIG : 0
+   MAV_0_CONFIG : 101
+   SER_TEL1_BAUD : 57600
    COM_OBL_RC_ACT : 4
+   MPC_XY_VEL_MAX : 2.2352
    ```
 
    The DDS client should report `Running`. It may report `Running, disconnected` when the Raspberry Pi's XRCE-DDS agent is not connected.
@@ -112,9 +127,7 @@ On the Pi, all three are in the outer row (along the board edge): the 3rd, 4th a
 
 ## 4. Start everything
 
-1. Find the USB names: `ls /dev/serial/by-id/`
-
-2. Create `~/LiDRON/Sensor-Control-Data-Gathering/.env` with them:
+1. Create `~/LiDRON/Sensor-Control-Data-Gathering/.env`. `PIXHAWK_DEVICE` and `RADIO_DEVICE` are only used by `airborne-bridge`, which flight tests don't run, so they can stay as below:
 
    ```dotenv
    PIXHAWK_DEVICE=/dev/serial/by-id/usb-Auterion_PX4_FMU_v6X.x_0-if00
@@ -124,14 +137,14 @@ On the Pi, all three are in the outer row (along the board edge): the 3rd, 4th a
    ROS_DOMAIN_ID=0
    ```
 
-3. Start the sensor containers:
+2. Start the sensor containers:
 
    ```bash
    cd ~/LiDRON/Sensor-Control-Data-Gathering
-   docker compose up -d --build airborne-bridge px4-agent oak-d
+   docker compose up -d --build px4-agent oak-d
    ```
 
-4. Start autonomy:
+3. Start autonomy:
 
    ```bash
    cd ~/LiDRON/Autonomous-Systems
@@ -161,13 +174,13 @@ To work inside the container instead, run `docker exec -it lidron_autonomy bash`
 
 | # | Check | Command | Good result |
 | --- | --- | --- | --- |
-| 1 | Pixhawk and radio | `docker logs --tail 5 airborne-bridge` | `Opened pixhawk`, `Opened radio`, then `Forwarded ...` every 5 s |
+| 1 | Radio link | connect QGroundControl to the ground SiK radio | it connects and shows the drone's status |
 | 2 | TELEM2 link | `docker logs px4-agent` | a `create_client` line |
 | 3 | PX4 reaches autonomy | `auto ros2 topic hz /fmu/out/vehicle_status` | a steady rate |
 | 4 | Camera reaches autonomy | `auto ros2 topic hz /oakd/depth/points` | about 13 Hz |
 | 5 | Obstacle detection | `auto ros2 topic echo --once /perception/obstacle_distance` | your hand's distance in meters |
 | 6 | Everything at once | `auto ros2 service call /autonomy/preflight_check std_srvs/srv/Trigger` | `success=True` |
-| 7 | Ground station | change the flight mode in QGroundControl over the radio | the mode changes, and `uplinked` goes up in check 1 |
+| 7 | Ground station | change the flight mode in QGroundControl over the radio | the mode changes on the drone |
 
 When all 7 pass, do the props-off dry run ([Autonomous-Systems #84](https://github.com/LiDRON7/Autonomous-Systems/issues/84)).
 
@@ -183,7 +196,8 @@ Each of these is explained in more detail in [pi-known-issues.md](https://github
 | `oak-d` keeps restarting with `No available devices` or `Insufficient permissions` | The udev rule from step 2 is missing. Add it, then unplug and replug the camera. |
 | Camera topics exist in `oak-d` but not in autonomy | Every container needs `FASTDDS_BUILTIN_TRANSPORTS=UDPv4` (it's in both compose files). |
 | Camera rate is low | It's in a black USB 2 port. Move it to a blue one. |
+| Camera connects, then drops every few seconds | Probably not enough power. See issue 10 in [pi-known-issues.md](https://github.com/LiDRON7/Sensor-Control-Data-Gathering/blob/flight-test/docs/pi-known-issues.md#10-the-camera-keeps-disconnecting) for the checks and fixes. |
 | PX4 says no GPS, even with the LED on | Reseat the 10-pin plug in GPS1 and reboot the Pixhawk. Indoors it should still show as present, just with no fix. |
-| `airborne-bridge` won't start | A path in `.env` is wrong. Compare it with `ls /dev/serial/by-id/`. |
+| QGroundControl can't connect over the radio | The radio must be on Pixhawk TELEM1 only, not also on the Pi's USB. Then check `MAV_0_CONFIG` and `SER_TEL1_BAUD` (step 3.4). |
 
 For everyday commands (logs, restart, update), see the [containers walkthrough](https://github.com/LiDRON7/Sensor-Control-Data-Gathering/blob/flight-test/CONTAINERS-WALKTHROUGH.md).
