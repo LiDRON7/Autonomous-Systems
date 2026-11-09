@@ -37,11 +37,11 @@ docker exec -it lidron_autonomy bash
 source /autonomy/install/setup.bash
 ```
 
-1. Check that every input is live. Only fly if it says `success: true`.
+1. Check input freshness, PX4 readiness, disarmed state, battery, failsafe flags and GPS. Only fly if it says `success: true`.
    `ros2 service call /autonomy/preflight_check std_srvs/srv/Trigger {}`
 2. Set where to go, here 8 m north at 5 m up (down is negative):
    `ros2 service call /autonomy/set_local_destination interfaces/srv/SetLocalDestination '{north: 8.0, east: 0.0, down: -5.0}'`
-3. Start:
+3. Start within 30 seconds of a passing check (repeat step 1 if it expired):
    `ros2 service call /autonomy/enable std_srvs/srv/SetBool '{data: true}'`
 4. Watch it:
    `ros2 topic echo /autonomy/state`
