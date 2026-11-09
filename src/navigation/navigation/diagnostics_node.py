@@ -1,6 +1,7 @@
 """Read-only topic and timestamp diagnostics for simulation and hardware."""
 
 from dataclasses import dataclass
+import json
 import math
 
 import rclpy
@@ -8,6 +9,7 @@ from px4_msgs.msg import BatteryStatus, FailsafeFlags, SensorGps, VehicleLocalPo
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image, PointCloud2
+from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
 
@@ -66,6 +68,7 @@ class DiagnosticsNode(Node):
         self.create_subscription(
             FailsafeFlags, "/fmu/out/failsafe_flags", self._on_failsafe_flags, px4_qos
         )
+        self.preflight_result_pub = self.create_publisher(String, "/autonomy/preflight_result", 10)
         self.create_service(Trigger, "/autonomy/preflight_check", self._check)
 
     def _now(self) -> float:
@@ -150,6 +153,10 @@ class DiagnosticsNode(Node):
                 details.append(f"GPS eph must be below 2.5 m and nonnegative: {self.gps.eph}")
         response.success = not details
         response.message = "; ".join(details) if details else "all required inputs are healthy"
+        self.preflight_result_pub.publish(String(data=json.dumps({
+            "success": response.success,
+            "checked_at_s": now,
+        })))
         return response
 
 

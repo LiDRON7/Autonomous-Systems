@@ -91,6 +91,9 @@ class MissionNode(Node):
         self.create_subscription(
             String, "/landing/assessment", self._on_landing_assessment, 10
         )
+        self.create_subscription(
+            String, "/autonomy/preflight_result", self._on_preflight_result, 10
+        )
         self.create_service(
             SetLocalDestination, "/autonomy/set_local_destination", self._set_local
         )
@@ -107,6 +110,7 @@ class MissionNode(Node):
         self.original_destination: tuple[float, float, float] | None = None
         self.yaw = 0.0
         self.vehicle_status: VehicleStatus | None = None
+        self.preflight_passed_at: float | None = None
 
         self.offboard_seen = False
         self.landed = True
@@ -350,6 +354,21 @@ class MissionNode(Node):
         })()
         return self._set_local(local_request, response)
 
+    def _on_preflight_result(self, msg: String) -> None:
+        # Every new result invalidates the previous pass unless it is valid itself.
+        self.preflight_passed_at = None
+        try:
+            result = json.loads(msg.data)
+            checked_at = float(result["checked_at_s"])
+            if (
+                result["success"] is True
+                and math.isfinite(checked_at)
+                and 0.0 <= self._now() - checked_at <= 30.0
+            ):
+                self.preflight_passed_at = checked_at
+        except (ValueError, TypeError, KeyError, OverflowError):
+            self.get_logger().warning("Ignored malformed preflight result")
+
     def _enable(self, request, response):
         if self.state == MissionState.PILOT_OVERRIDE:
             if not request.data:
@@ -388,6 +407,14 @@ class MissionNode(Node):
         }:
             response.success, response.message = False, "mission is already active"
             return response
+        if (
+            self.preflight_passed_at is None
+            or not 0.0 <= self._now() - self.preflight_passed_at <= 30.0
+        ):
+            response.success = False
+            response.message = "a passing /autonomy/preflight_check within 30 seconds is required"
+            return response
+        self.preflight_passed_at = None
         self.operator_hold = False
         self.mission_started = self._now()
         self.offboard_seen = False
