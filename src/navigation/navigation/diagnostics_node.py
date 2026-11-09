@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 import rclpy
-from px4_msgs.msg import SensorGps, VehicleLocalPosition, VehicleStatus
+from px4_msgs.msg import BatteryStatus, SensorGps, VehicleLocalPosition, VehicleStatus
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image, PointCloud2
@@ -22,6 +22,7 @@ class DiagnosticsNode(Node):
         self.declare_parameter("diagnostic_timeout_s", 2.0)
         self.declare_parameter("require_lidar", True)
         self.vehicle_status: VehicleStatus | None = None
+        self.battery_status: BatteryStatus | None = None
         self.health = {
             "oakd_depth_image": TopicHealth(),
             "oakd_depth_points": TopicHealth(),
@@ -29,6 +30,7 @@ class DiagnosticsNode(Node):
             "gps": TopicHealth(),
             "px4_position": TopicHealth(),
             "px4_status": TopicHealth(),
+            "battery": TopicHealth(),
         }
         px4_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -54,6 +56,9 @@ class DiagnosticsNode(Node):
         self.create_subscription(
             VehicleStatus, "/fmu/out/vehicle_status", self._on_status, px4_qos
         )
+        self.create_subscription(
+            BatteryStatus, "/fmu/out/battery_status", self._on_battery, px4_qos
+        )
         self.create_service(Trigger, "/autonomy/preflight_check", self._check)
 
     def _now(self) -> float:
@@ -68,6 +73,10 @@ class DiagnosticsNode(Node):
     def _on_status(self, msg: VehicleStatus) -> None:
         self.vehicle_status = msg
         self.health["px4_status"] = TopicHealth(self._now())
+
+    def _on_battery(self, msg: BatteryStatus) -> None:
+        self.battery_status = msg
+        self.health["battery"] = TopicHealth(self._now())
 
     def _check(self, _request, response):
         timeout = float(self.get_parameter("diagnostic_timeout_s").value)
@@ -95,6 +104,11 @@ class DiagnosticsNode(Node):
                 details.append("PX4 preflight checks have not passed")
             if self.vehicle_status.arming_state != VehicleStatus.ARMING_STATE_DISARMED:
                 details.append("drone is not disarmed")
+        if "battery" not in stale and self.battery_status is not None:
+            if not self.battery_status.connected:
+                details.append("battery is not connected")
+            if self.battery_status.warning != BatteryStatus.BATTERY_WARNING_NONE:
+                details.append(f"battery warning active: {self.battery_status.warning}")
         response.success = not details
         response.message = "; ".join(details) if details else "all required inputs are healthy"
         return response
