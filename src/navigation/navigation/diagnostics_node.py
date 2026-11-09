@@ -21,6 +21,7 @@ class DiagnosticsNode(Node):
         super().__init__("diagnostics")
         self.declare_parameter("diagnostic_timeout_s", 2.0)
         self.declare_parameter("require_lidar", True)
+        self.vehicle_status: VehicleStatus | None = None
         self.health = {
             "oakd_depth_image": TopicHealth(),
             "oakd_depth_points": TopicHealth(),
@@ -51,7 +52,7 @@ class DiagnosticsNode(Node):
             px4_qos,
         )
         self.create_subscription(
-            VehicleStatus, "/fmu/out/vehicle_status", self._callback("px4_status"), px4_qos
+            VehicleStatus, "/fmu/out/vehicle_status", self._on_status, px4_qos
         )
         self.create_service(Trigger, "/autonomy/preflight_check", self._check)
 
@@ -63,6 +64,10 @@ class DiagnosticsNode(Node):
             frame_id = getattr(getattr(msg, "header", None), "frame_id", "")
             self.health[name] = TopicHealth(self._now(), frame_id)
         return receive
+
+    def _on_status(self, msg: VehicleStatus) -> None:
+        self.vehicle_status = msg
+        self.health["px4_status"] = TopicHealth(self._now())
 
     def _check(self, _request, response):
         timeout = float(self.get_parameter("diagnostic_timeout_s").value)
@@ -79,12 +84,18 @@ class DiagnosticsNode(Node):
             for name in ("oakd_depth_image", "oakd_depth_points", "lidar_points")
             if self.health[name].received_s is not None and not self.health[name].frame_id
         ]
-        response.success = not stale and not missing_frames
         details = []
         if stale:
             details.append("missing/stale: " + ", ".join(stale))
         if missing_frames:
             details.append("empty frame_id: " + ", ".join(missing_frames))
+        # Missing/stale status already fails above; only interpret fresh telemetry.
+        if "px4_status" not in stale and self.vehicle_status is not None:
+            if not self.vehicle_status.pre_flight_checks_pass:
+                details.append("PX4 preflight checks have not passed")
+            if self.vehicle_status.arming_state != VehicleStatus.ARMING_STATE_DISARMED:
+                details.append("drone is not disarmed")
+        response.success = not details
         response.message = "; ".join(details) if details else "all required inputs are healthy"
         return response
 
