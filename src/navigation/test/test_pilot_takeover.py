@@ -229,6 +229,7 @@ def test_restart_rejects_unconfirmed_ground_state(node, case):
 
 
 def test_explicit_enable_restarts_with_fresh_landed_disarmed_status(node):
+    node.preflight_passed_at = node._now()
     takeover(node)
     status(node, arming=VehicleStatus.ARMING_STATE_DISARMED)
     node._on_land(SimpleNamespace(landed=True))
@@ -263,6 +264,7 @@ def test_destination_can_change_without_unlocking_override(node):
 
 
 def test_normal_preflight_takeoff_and_navigation_still_work(node):
+    node.preflight_passed_at = node._now()
     node.state = MissionState.IDLE
     assert enable(node).success
     for _ in range(10):

@@ -26,7 +26,9 @@ Published by PX4 through the `px4-agent` container on the drone, or `lidron_dds_
 | `/fmu/out/vehicle_attitude` | mission | Which way the drone is facing |
 | `/fmu/out/vehicle_status` | mission, diagnostics | Armed or not, flight mode. Disarmed after landing means the mission is done. |
 | `/fmu/out/vehicle_command_ack` | mission | Whether PX4 accepted a command. A rejection aborts the mission. |
-| `/fmu/out/vehicle_gps_position` | diagnostics ([diagnostics_node.py](../src/navigation/navigation/diagnostics_node.py)) | GPS is alive |
+| `/fmu/out/vehicle_gps_position` | diagnostics ([diagnostics_node.py](../src/navigation/navigation/diagnostics_node.py)) | 3D-or-better fix, at least 8 satellites, finite nonnegative eph below 2.5 m |
+| `/fmu/out/battery_status` | diagnostics | Connected battery with no warning |
+| `/fmu/out/failsafe_flags` | diagnostics | RC loss, battery warning/health/remaining time, local/global position and home validity |
 
 ## To PX4
 
@@ -47,6 +49,7 @@ Only the mission node sends these. Nothing else commands PX4.
 | `/landing/assessment` | `std_msgs/String` (JSON) | perception | mission | Is the landing spot safe, and why not |
 | `/landing/ground_points` | `sensor_msgs/PointCloud2` | perception | RViz | Ground the LiDAR found |
 | `/landing/non_ground_points` | `sensor_msgs/PointCloud2` | perception | RViz | Everything else |
+| `/autonomy/preflight_result` | `std_msgs/String` (JSON) | diagnostics | mission | Each requested check's `success` and `checked_at_s` (ROS clock seconds); volatile, not replayed to late subscribers |
 
 ## For the operator
 
@@ -62,10 +65,18 @@ Services, called from the laptop:
 
 | Service | Type | Does |
 | --- | --- | --- |
-| `/autonomy/preflight_check` | `std_srvs/Trigger` | Checks every input above is live |
+| `/autonomy/preflight_check` | `std_srvs/Trigger` | Checks required input freshness, frame IDs, PX4 preflight readiness/disarmed state, battery, failsafe flags and GPS; lists all detected failures |
 | `/autonomy/set_local_destination` | `interfaces/SetLocalDestination` | Sets a north/east/down goal |
 | `/autonomy/set_gps_destination` | `interfaces/SetGpsDestination` | Sets a latitude/longitude/altitude goal |
-| `/autonomy/enable` | `std_srvs/SetBool` | Starts (`true`) or holds (`false`) the mission |
+| `/autonomy/enable` | `std_srvs/SetBool` | Starts (`true`) only with a passing check in the last 30 seconds, or holds (`false`) the mission; HOLD resume does not require a new disarmed check |
 | `/autonomy/abort` | `std_srvs/Trigger` | Lands now |
 
 With `require_lidar: false` (the flight test), the mission and the preflight check ignore `/lidar/points` and `/landing/assessment`.
+
+A failed check invalidates the previous pass. Starting a mission consumes the pass.
+Both nodes must use the same ROS clock configuration. Run the check after both nodes
+are running; a mission-node restart requires a new check. The result topic is an
+internal coordination channel, not an authentication boundary.
+
+Widow's PWM ESCs cannot confirm motor connection or power through these checks.
+Perform the props-off QGroundControl motor test on every flight day (#20).
