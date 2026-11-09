@@ -1,6 +1,7 @@
 """Read-only topic and timestamp diagnostics for simulation and hardware."""
 
 from dataclasses import dataclass
+import math
 
 import rclpy
 from px4_msgs.msg import BatteryStatus, FailsafeFlags, SensorGps, VehicleLocalPosition, VehicleStatus
@@ -24,6 +25,7 @@ class DiagnosticsNode(Node):
         self.vehicle_status: VehicleStatus | None = None
         self.battery_status: BatteryStatus | None = None
         self.failsafe_flags: FailsafeFlags | None = None
+        self.gps: SensorGps | None = None
         self.health = {
             "oakd_depth_image": TopicHealth(),
             "oakd_depth_points": TopicHealth(),
@@ -47,7 +49,7 @@ class DiagnosticsNode(Node):
         self.create_subscription(PointCloud2, "/lidar/points", self._callback("lidar_points"), 10)
         # PX4 publishes GPS on hardware and in SITL, so no separate /gps driver is needed.
         self.create_subscription(
-            SensorGps, "/fmu/out/vehicle_gps_position", self._callback("gps"), px4_qos
+            SensorGps, "/fmu/out/vehicle_gps_position", self._on_gps, px4_qos
         )
         self.create_subscription(
             VehicleLocalPosition,
@@ -86,6 +88,10 @@ class DiagnosticsNode(Node):
     def _on_failsafe_flags(self, msg: FailsafeFlags) -> None:
         self.failsafe_flags = msg
         self.health["failsafe_flags"] = TopicHealth(self._now())
+
+    def _on_gps(self, msg: SensorGps) -> None:
+        self.gps = msg
+        self.health["gps"] = TopicHealth(self._now())
 
     def _check(self, _request, response):
         timeout = float(self.get_parameter("diagnostic_timeout_s").value)
@@ -135,6 +141,13 @@ class DiagnosticsNode(Node):
                 details.append(
                     f"failsafe: battery warning active: {self.failsafe_flags.battery_warning}"
                 )
+        if "gps" not in stale and self.gps is not None:
+            if self.gps.fix_type < SensorGps.FIX_TYPE_3D:
+                details.append("GPS requires a 3D fix or better")
+            if self.gps.satellites_used < 8:
+                details.append(f"GPS requires at least 8 satellites: {self.gps.satellites_used}")
+            if not math.isfinite(self.gps.eph) or not 0.0 <= self.gps.eph < 2.5:
+                details.append(f"GPS eph must be below 2.5 m and nonnegative: {self.gps.eph}")
         response.success = not details
         response.message = "; ".join(details) if details else "all required inputs are healthy"
         return response
