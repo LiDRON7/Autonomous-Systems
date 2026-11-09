@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 import rclpy
-from px4_msgs.msg import BatteryStatus, SensorGps, VehicleLocalPosition, VehicleStatus
+from px4_msgs.msg import BatteryStatus, FailsafeFlags, SensorGps, VehicleLocalPosition, VehicleStatus
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image, PointCloud2
@@ -23,6 +23,7 @@ class DiagnosticsNode(Node):
         self.declare_parameter("require_lidar", True)
         self.vehicle_status: VehicleStatus | None = None
         self.battery_status: BatteryStatus | None = None
+        self.failsafe_flags: FailsafeFlags | None = None
         self.health = {
             "oakd_depth_image": TopicHealth(),
             "oakd_depth_points": TopicHealth(),
@@ -31,6 +32,7 @@ class DiagnosticsNode(Node):
             "px4_position": TopicHealth(),
             "px4_status": TopicHealth(),
             "battery": TopicHealth(),
+            "failsafe_flags": TopicHealth(),
         }
         px4_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -59,6 +61,9 @@ class DiagnosticsNode(Node):
         self.create_subscription(
             BatteryStatus, "/fmu/out/battery_status", self._on_battery, px4_qos
         )
+        self.create_subscription(
+            FailsafeFlags, "/fmu/out/failsafe_flags", self._on_failsafe_flags, px4_qos
+        )
         self.create_service(Trigger, "/autonomy/preflight_check", self._check)
 
     def _now(self) -> float:
@@ -77,6 +82,10 @@ class DiagnosticsNode(Node):
     def _on_battery(self, msg: BatteryStatus) -> None:
         self.battery_status = msg
         self.health["battery"] = TopicHealth(self._now())
+
+    def _on_failsafe_flags(self, msg: FailsafeFlags) -> None:
+        self.failsafe_flags = msg
+        self.health["failsafe_flags"] = TopicHealth(self._now())
 
     def _check(self, _request, response):
         timeout = float(self.get_parameter("diagnostic_timeout_s").value)
@@ -109,6 +118,23 @@ class DiagnosticsNode(Node):
                 details.append("battery is not connected")
             if self.battery_status.warning != BatteryStatus.BATTERY_WARNING_NONE:
                 details.append(f"battery warning active: {self.battery_status.warning}")
+        if "failsafe_flags" not in stale and self.failsafe_flags is not None:
+            # These flags must be clear before starting an autonomous mission.
+            checks = {
+                "manual_control_signal_lost": "RC signal lost",
+                "battery_low_remaining_time": "battery remaining flight time low",
+                "battery_unhealthy": "battery unhealthy",
+                "local_position_invalid": "local position invalid",
+                "global_position_invalid": "global position invalid",
+                "home_position_invalid": "home position invalid",
+            }
+            for field, description in checks.items():
+                if getattr(self.failsafe_flags, field):
+                    details.append("failsafe: " + description)
+            if self.failsafe_flags.battery_warning != BatteryStatus.BATTERY_WARNING_NONE:
+                details.append(
+                    f"failsafe: battery warning active: {self.failsafe_flags.battery_warning}"
+                )
         response.success = not details
         response.message = "; ".join(details) if details else "all required inputs are healthy"
         return response
