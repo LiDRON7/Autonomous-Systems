@@ -1,11 +1,15 @@
+# These numbers are for Huntsman, the simulator's default drone (Simulation/tools/cad_to_sdf.py prints them).
+# For DRONE=widow: require_lidar: false (it has no LiDAR) and map.sensor_translation_flu_m: [0.083, 0.001, -0.047].
 /**:
   ros__parameters:
     use_sim_time: true
+    lidar_topic: /lidar/points
 
 perception:
   ros__parameters:
     depth_topic: /oakd/depth/image
-    lidar_topic: /lidar/points
+    # Puck LITE on its side, as in the CAD and the simulator model: roll 90, pitch 135.
+    lidar_mount_rpy_deg: [90.0, 135.0, 0.0]
     obstacle_threshold_m: 1.5
     depth_roi_ratio: 0.4
     landing.footprint_m: 1.2
@@ -25,14 +29,15 @@ perception:
     roi.z_enabled: false
     roi.z_min: -10.0
     roi.z_max: 10.0
-    # Remove x500 body returns in the sensor-relative volume measured in Gazebo.
+    # Drop the drone's own returns: everything within half a metre that is level with the LiDAR or above it
+    # (landing frame: x forward, y right, z down). Not yet checked against a recorded cloud.
     self_filter.enabled: true
-    self_filter.x_min: -0.22
-    self_filter.x_max: 0.22
-    self_filter.y_min: -0.22
-    self_filter.y_max: 0.22
-    self_filter.z_min: -0.08
-    self_filter.z_max: -0.02
+    self_filter.x_min: -0.5
+    self_filter.x_max: 0.5
+    self_filter.y_min: -0.3
+    self_filter.y_max: 0.3
+    self_filter.z_min: -0.4
+    self_filter.z_max: 0.05
     ransac.dist_threshold: 0.01
     ransac.num_iterations: 500
 
@@ -52,8 +57,9 @@ mission:
     map.size_m: 30.0
     map.inflation_m: 1.0
     map.expiry_s: 2.0
-    # Provisional zero-rotation mount from PX4 v1.15.0 + local x500_depth SDF.
-    map.sensor_translation_flu_m: [0.13233, 0.0, 0.26078]
+    # Camera lens from the centre of mass, and its 10 deg downward tilt (Huntsman README).
+    map.sensor_translation_flu_m: [0.134, 0.0, -0.037]
+    map.sensor_pitch_down_deg: 10.0
     map.min_height_m: -1.5
     map.max_height_m: 1.5
     landing_confirmations: 8

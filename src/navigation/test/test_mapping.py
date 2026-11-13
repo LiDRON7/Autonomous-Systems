@@ -44,3 +44,15 @@ def test_known_flu_obstacle_was_discarded_by_main_filter():
     original = (raw[:, 1] >= -1.5) & (raw[:, 1] <= 1.5) & (raw[:, 2] > 0.2)
     assert not original.any()
     assert depth_points_to_world(raw, (0, 0, 0), 0, -1.5, 1.5)[0] == [(3, 0)]
+
+
+def test_camera_pitched_down_does_not_turn_far_ground_into_an_obstacle():
+    # 5 m up, camera 10 deg down: the ground 25 m ahead sits inside the camera's own +-1.5 m band.
+    pitch = math.radians(10)
+    ground = [25 * math.cos(pitch) - 5 * math.sin(pitch), 0.0, -5 * math.cos(pitch) + 25 * math.sin(pitch)]
+    assert depth_points_to_world([ground], (0, 0, -5), 0, -1.5, 1.5)[0]            # old: false obstacle
+    assert not depth_points_to_world([ground], (0, 0, -5), 0, -1.5, 1.5, pitch_down=pitch)[0]
+    # an obstacle at the drone's own height, 4 m ahead, is still kept and lands 4 m north
+    level = [4 * math.cos(pitch), 0.0, 4 * math.sin(pitch)]
+    world, _ = depth_points_to_world([level], (0, 0, -5), 0, -1.5, 1.5, pitch_down=pitch)
+    np.testing.assert_allclose(world, [(4, 0)], atol=1e-9)

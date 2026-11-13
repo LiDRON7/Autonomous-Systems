@@ -12,7 +12,6 @@ from px4_msgs.msg import (
     VehicleAttitude,
     VehicleCommand,
     VehicleCommandAck,
-    VehicleLandDetected,
     VehicleLocalPosition,
     VehicleStatus,
 )
@@ -30,6 +29,8 @@ from .grid import RollingGrid
 from .mapping import depth_points_to_world
 from .planner import astar, landing_search_offset, simplify
 from .state import MissionState, can_transition, data_is_fresh
+
+MAX_CLOUD_POINTS = 5000
 
 ACTIVE_STATES = {
     MissionState.PREFLIGHT,
@@ -74,9 +75,6 @@ class MissionNode(Node):
             VehicleStatus, "/fmu/out/vehicle_status", self._on_status, px4_qos
         )
         self.create_subscription(
-            VehicleLandDetected, "/fmu/out/vehicle_land_detected", self._on_land, px4_qos
-        )
-        self.create_subscription(
             VehicleAttitude, "/fmu/out/vehicle_attitude", self._on_attitude, px4_qos
         )
         self.create_subscription(
@@ -109,8 +107,6 @@ class MissionNode(Node):
         self.vehicle_status: VehicleStatus | None = None
 
         self.offboard_seen = False
-        self.landed = True
-        self.land_stamp: float | None = None
 
         self.stamps: dict[str, float | None] = {
             "position": None,
@@ -174,6 +170,7 @@ class MissionNode(Node):
             "map.inflation_m": 1.0,
             "map.expiry_s": 2.0,
             "map.sensor_translation_flu_m": [0.0, 0.0, 0.0],
+            "map.sensor_pitch_down_deg": 0.0,
             "map.min_height_m": -1.5,
             "map.max_height_m": 1.5,
             "destination.north": 8.0,
@@ -218,10 +215,19 @@ class MissionNode(Node):
             return
         if msg.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
             self.offboard_seen = True
-        elif self.offboard_seen and msg.nav_state == VehicleStatus.NAVIGATION_STATE_POSCTL:
-            self._pilot_takeover()
+        elif (
+            self.offboard_seen
+            and msg.arming_state == VehicleStatus.ARMING_STATE_ARMED
+            and not (
+                self.state == MissionState.LANDING
+                and msg.nav_state == VehicleStatus.NAVIGATION_STATE_AUTO_LAND
+            )
+        ):
+            # Any other mode while armed: the pilot, QGroundControl (Land, RTL, Hold) or a
+            # PX4 failsafe took over. Stop commanding, or a later abort would override them.
+            self._pilot_takeover(int(msg.nav_state))
 
-    def _pilot_takeover(self) -> None:
+    def _pilot_takeover(self, nav_state: int) -> None:
         """Relinquish autonomy without asking PX4 to land or change modes."""
         self._transition(MissionState.PILOT_OVERRIDE)
         self.mission_started = None
@@ -229,15 +235,13 @@ class MissionNode(Node):
         self.path.clear()
         self.path_index = 0
         self.hold_point = None
-        self.get_logger().warning("Position mode after Offboard: pilot override; autonomy stopped")
+        self.get_logger().warning(
+            f"PX4 left Offboard (nav_state {nav_state}): pilot or failsafe has control; autonomy stopped"
+        )
 
     def _on_attitude(self, msg: VehicleAttitude) -> None:
         w, x, y, z = (float(value) for value in msg.q)
         self.yaw = math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
-
-    def _on_land(self, msg: VehicleLandDetected) -> None:
-        self.landed = bool(msg.landed)
-        self.land_stamp = self._now()
 
     def _on_command_ack(self, msg: VehicleCommandAck) -> None:
         command = int(msg.command)
@@ -299,11 +303,15 @@ class MissionNode(Node):
         if self.position is None:
             return
         raw = point_cloud2.read_points_numpy(msg, field_names=("x", "y", "z"))
+        # shortcut: keeps every n-th point so a full-resolution cloud (Gazebo sends 300 000) cannot
+        # stall the 10 Hz offboard stream. The drone's camera node already sends about 4 000.
+        raw = raw[::max(1, len(raw) // MAX_CLOUD_POINTS)]
         world, valid_count = depth_points_to_world(
             raw, self.position, self.yaw,
             float(self.get_parameter("map.min_height_m").value),
             float(self.get_parameter("map.max_height_m").value),
             self.get_parameter("map.sensor_translation_flu_m").value,
+            math.radians(float(self.get_parameter("map.sensor_pitch_down_deg").value)),
         )
         now = self._now()
         self.grid_origin = self.grid.origin_around(self.position[:2])
@@ -357,15 +365,14 @@ class MissionNode(Node):
                 return response
             now = self._now()
             timeout = float(self.get_parameter("sensor_timeout_s").value)
+            # PX4 1.15 does not send vehicle_land_detected over DDS; disarmed is the proof it is down.
             if not (
                 data_is_fresh(now, self.stamps["status"], timeout)
-                and data_is_fresh(now, self.land_stamp, timeout)
                 and self.vehicle_status is not None
                 and self.vehicle_status.arming_state == VehicleStatus.ARMING_STATE_DISARMED
-                and self.landed
             ):
                 response.success = False
-                response.message = "pilot override: fresh landed and disarmed telemetry required"
+                response.message = "pilot override: fresh disarmed telemetry required"
                 return response
         if not request.data:
             if self.state not in ACTIVE_STATES:

@@ -21,6 +21,7 @@ class DiagnosticsNode(Node):
         super().__init__("diagnostics")
         self.declare_parameter("diagnostic_timeout_s", 2.0)
         self.declare_parameter("require_lidar", True)
+        self.declare_parameter("lidar_topic", "/lidar/points")
         self.health = {
             "oakd_depth_image": TopicHealth(),
             "oakd_depth_points": TopicHealth(),
@@ -39,7 +40,9 @@ class DiagnosticsNode(Node):
         self.create_subscription(
             PointCloud2, "/oakd/depth/points", self._callback("oakd_depth_points"), 10
         )
-        self.create_subscription(PointCloud2, "/lidar/points", self._callback("lidar_points"), 10)
+        self.create_subscription(
+            PointCloud2, str(self.get_parameter("lidar_topic").value), self._callback("lidar_points"), 10
+        )
         # PX4 publishes GPS on hardware and in SITL, so no separate /gps driver is needed.
         self.create_subscription(
             SensorGps, "/fmu/out/vehicle_gps_position", self._callback("gps"), px4_qos

@@ -48,7 +48,7 @@ source /autonomy/install/setup.bash
 5. Stop and land if anything looks wrong:
    `ros2 service call /autonomy/abort std_srvs/srv/Trigger {}`
 
-The pilot can take over at any time with the RC transmitter, or switch to Land or RTL in QGroundControl.
+The pilot can take over at any time with the RC transmitter, or switch to Land, Hold or RTL in QGroundControl. Any mode change away from Offboard stops the autonomy, and so does a PX4 failsafe: it sends nothing more until the drone is disarmed and you start a new mission.
 
 ## How it decides
 
@@ -61,8 +61,8 @@ The drone takes off to 5 m and flies toward the goal. It replans when the camera
 
 ## More
 
-- [docs/connect-to-pi.md](docs/connect-to-pi.md): how to SSH into the drone's Pi, at the university or in the field.
-- [docs/pi-setup.md](docs/pi-setup.md): wire the drone's Pi, start the containers and check everything works.
+- [Connect to the Pi](https://github.com/LiDRON7/Sensor-Control-Data-Gathering/blob/flight-test/docs/connect-to-pi.md): how to SSH into the drone's Pi, at the university or in the field.
+- [Pi setup](https://github.com/LiDRON7/Sensor-Control-Data-Gathering/blob/flight-test/docs/pi-setup.md): wire the drone's Pi, start the containers and check everything works.
 - [Pi known issues](https://github.com/LiDRON7/Sensor-Control-Data-Gathering/blob/flight-test/docs/pi-known-issues.md): every problem we hit on the Pi, why, and the fix.
 - [docs/topics.md](docs/topics.md): every topic and service, who sends it and who uses it.
 - [docs/reference.md](docs/reference.md): parameters, tests and troubleshooting.

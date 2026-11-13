@@ -4,6 +4,7 @@ from perception.filters import (
     PassThroughBounds,
     exclude_box,
     finite_points,
+    lidar_to_landing_frame,
     passthrough_filter,
     preprocess_landing_cloud,
     statistical_outlier_removal,
@@ -125,3 +126,31 @@ def test_roi_retains_clearance_obstacle_outside_landing_footprint():
     result = evaluate_landing_zone(filtered)
     assert result.assessment.reason == "obstacle_inside_clearance"
     np.testing.assert_allclose(result.non_ground_points, [[0.65, 0, -0.5]])
+
+
+def _rotation(rpy_deg):
+    r, p, y = np.radians(rpy_deg)
+    rx = np.array([[1, 0, 0], [0, np.cos(r), -np.sin(r)], [0, np.sin(r), np.cos(r)]])
+    ry = np.array([[np.cos(p), 0, np.sin(p)], [0, 1, 0], [-np.sin(p), 0, np.cos(p)]])
+    rz = np.array([[np.cos(y), -np.sin(y), 0], [np.sin(y), np.cos(y), 0], [0, 0, 1]])
+    return rz @ ry @ rx
+
+
+def test_upside_down_lidar_frame_is_already_the_landing_frame():
+    points = np.array([[1.0, 2.0, 3.0], [-0.5, 0.25, 4.0]], dtype=np.float32)
+    np.testing.assert_allclose(lidar_to_landing_frame(points), points, atol=1e-6)
+
+
+def test_side_mounted_lidar_ground_becomes_a_level_floor_below():
+    # Huntsman: Puck LITE on its side (roll 90, pitch 135). Flat ground 3 m under the drone, body x forward, y left, z up.
+    from perception.landing import assess_landing_zone
+    mount = (90.0, 135.0, 0.0)
+    xs, ys = np.meshgrid(np.linspace(-1.5, 1.5, 31), np.linspace(-1.5, 1.5, 31))
+    body = np.column_stack((xs.ravel(), ys.ravel(), np.full(xs.size, -3.0)))
+    in_lidar_frame = body @ _rotation(mount)            # what the sensor reports
+    assert not assess_landing_zone(in_lidar_frame).suitable   # read raw, the floor looks like a wall
+    landing = lidar_to_landing_frame(in_lidar_frame, mount)
+    np.testing.assert_allclose(landing[:, 2], 3.0, atol=1e-5)          # z down
+    np.testing.assert_allclose(landing[:, 0], body[:, 0], atol=1e-5)   # x still forward
+    np.testing.assert_allclose(landing[:, 1], -body[:, 1], atol=1e-5)  # y right
+    assert assess_landing_zone(landing).suitable

@@ -3,11 +3,15 @@
     use_sim_time: false
     # Flight-test drone has no LiDAR mount yet: skip the LiDAR checks and land at the destination.
     require_lidar: false
+    # The Velodyne driver's topic. Perception and the preflight check both read it from here.
+    lidar_topic: /velodyne_points
 
 perception:
   ros__parameters:
     depth_topic: /oakd/depth/image
-    lidar_topic: /lidar/points
+    # Huntsman: Puck LITE on its side, cable up and forward at 45 deg (Huntsman README): roll 90, pitch 135.
+    # Check in RViz with the LiDAR mounted before setting require_lidar: true.
+    lidar_mount_rpy_deg: [90.0, 135.0, 0.0]
     obstacle_threshold_m: 2.0
     depth_roi_ratio: 0.4
     landing.footprint_m: 1.5
@@ -51,6 +55,10 @@ mission:
     map.size_m: 25.0
     map.inflation_m: 1.25
     map.expiry_s: 1.5
+    # Camera lens from the centre of mass, and its 10 deg downward tilt. These are Widow's (Widow README);
+    # Huntsman's lens is at [0.134, 0.0, -0.037].
+    map.sensor_translation_flu_m: [0.083, 0.0, -0.047]
+    map.sensor_pitch_down_deg: 10.0
     map.min_height_m: -1.5
     map.max_height_m: 1.5
     landing_confirmations: 12
