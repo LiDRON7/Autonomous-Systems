@@ -1,0 +1,11 @@
+# Huntsman's own numbers (Drone-Construction/3D Models/Huntsman/README.md). Loaded on top of simulation.yaml or hardware.yaml.
+perception:
+  ros__parameters:
+    # Puck LITE on its side, cable up and forward at 45 deg: roll 90, pitch 135.
+    lidar_mount_rpy_deg: [90.0, 135.0, 0.0]
+
+mission:
+  ros__parameters:
+    # Camera lens from the centre of mass, and its 10 deg downward tilt.
+    map.sensor_translation_flu_m: [0.134, 0.0, -0.037]
+    map.sensor_pitch_down_deg: 10.0
