@@ -18,5 +18,7 @@ services:
       # The sensor containers run as other users, so Fast DDS shared memory fails; use UDP.
       - FASTDDS_BUILTIN_TRANSPORTS=UDPv4
       - AUTONOMY_CONFIG=hardware
+      # No default on purpose: each Pi says which drone it is in integration/.env (DRONE=widow or DRONE=huntsman).
+      - DRONE=${DRONE:?set DRONE=widow or DRONE=huntsman in integration/.env}
     volumes:
       - ..:/autonomy

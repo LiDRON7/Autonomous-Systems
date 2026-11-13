@@ -1,0 +1,11 @@
+# Widow's own numbers (Drone-Construction/3D Models/Widow/README.md). Loaded on top of simulation.yaml or hardware.yaml.
+/**:
+  ros__parameters:
+    # Widow carries no LiDAR: skip the LiDAR checks and land at the destination.
+    require_lidar: false
+
+mission:
+  ros__parameters:
+    # Camera lens from the centre of mass, and its 10 deg downward tilt.
+    map.sensor_translation_flu_m: [0.083, 0.0, -0.047]
+    map.sensor_pitch_down_deg: 10.0
