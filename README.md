@@ -10,15 +10,16 @@ This code flies the drone on its own. It maps obstacles with the OAK-D camera, p
 ## Run it on the drone
 
 1. Start the sensor containers from [Sensor-Control-Data-Gathering](https://github.com/LiDRON7/Sensor-Control-Data-Gathering).
-2. Start autonomy:
+2. Tell the Pi which drone it is, once: `echo DRONE=widow > integration/.env` (or `DRONE=huntsman`). It refuses to start without it.
+3. Start autonomy:
 
    ```bash
    docker compose -f integration/compose.hardware.yml up -d --build
    ```
 
-It loads `src/bringup/config/hardware.yaml` and waits. Nothing flies until you start a mission. The first build on the Pi is slow because it compiles the PX4 messages.
+It loads `src/bringup/config/hardware.yaml`, then that drone's own numbers (`widow.yaml` or `huntsman.yaml`: camera position, LiDAR mount), and waits. Nothing flies until you start a mission. The first build on the Pi is slow because it compiles the PX4 messages.
 
-The flight-test drone has no LiDAR yet, so `hardware.yaml` sets `require_lidar: false`. In that mode the drone lands at the destination without checking the ground. Change it to `true` once the LiDAR is mounted.
+`hardware.yaml` sets `require_lidar: false`, so the drone lands at the destination without checking the ground. Widow has no LiDAR, so it stays that way. For Huntsman, change it to `true` once the LiDAR is mounted and its cloud looks right in RViz.
 
 ## Run it in simulation
 
@@ -28,7 +29,7 @@ Clone [Simulation](https://github.com/LiDRON7/Simulation) next to this repo, the
 ./scripts/simulation.sh up
 ```
 
-`./scripts/simulation.sh down` stops it. Machine setup (Linux, macOS, Windows) is in the Simulation README.
+`./scripts/simulation.sh down` stops it. `DRONE=` in `Simulation/.env` picks the drone for both the simulator and the autonomy config. Machine setup (Linux, macOS, Windows) is in the Simulation README.
 
 ## Fly a mission
 
@@ -39,8 +40,9 @@ source /autonomy/install/setup.bash
 
 1. Check that every input is live. Only fly if it says `success: true`.
    `ros2 service call /autonomy/preflight_check std_srvs/srv/Trigger {}`
-2. Set where to go, here 8 m north at 5 m up (down is negative):
+2. Set where to go, here 8 m north:
    `ros2 service call /autonomy/set_local_destination interfaces/srv/SetLocalDestination '{north: 8.0, east: 0.0, down: -5.0}'`
+   The drone flies at `cruise_altitude_m` above where it took off. `down` (negative is up) only counts when it asks for more height than that, so a destination at ground level does not fly the drone into the ground.
 3. Start:
    `ros2 service call /autonomy/enable std_srvs/srv/SetBool '{data: true}'`
 4. Watch it:

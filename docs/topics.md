@@ -63,7 +63,7 @@ Services, called from the laptop:
 | Service | Type | Does |
 | --- | --- | --- |
 | `/autonomy/preflight_check` | `std_srvs/Trigger` | Checks every input above is live |
-| `/autonomy/set_local_destination` | `interfaces/SetLocalDestination` | Sets a north/east/down goal |
+| `/autonomy/set_local_destination` | `interfaces/SetLocalDestination` | Sets a north/east/down goal. The drone never flies below cruise height on the way; `down` only raises it |
 | `/autonomy/set_gps_destination` | `interfaces/SetGpsDestination` | Sets a latitude/longitude/altitude goal |
 | `/autonomy/enable` | `std_srvs/SetBool` | Starts (`true`) or holds (`false`) the mission |
 | `/autonomy/abort` | `std_srvs/Trigger` | Lands now |

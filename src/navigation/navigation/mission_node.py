@@ -466,12 +466,22 @@ class MissionNode(Node):
         if handler:
             handler()
 
+    def _cruise_z(self) -> float:
+        # Height above where the drone stood at preflight, not above PX4's origin, which drifts on the pad.
+        ground = self.takeoff_point[2] if self.takeoff_point else 0.0
+        return ground - abs(float(self.get_parameter("cruise_altitude_m").value))
+
+    def _flight_z(self) -> float:
+        # Never below cruise height: a destination's "down" only counts when it is higher (NED, up is negative).
+        assert self.destination
+        return min(self._cruise_z(), self.destination[2])
+
     def _preflight(self) -> None:
         if self.position is None or not self._health_ok():
             return
         if self.takeoff_point is None:
             self.takeoff_point = self.position
-        cruise_z = -abs(float(self.get_parameter("cruise_altitude_m").value))
+        cruise_z = self._cruise_z()
         self._setpoint(self.takeoff_point[0], self.takeoff_point[1], cruise_z, self.yaw)
         self.offboard_warmup += 1
         if self.offboard_warmup >= 10:
@@ -483,7 +493,7 @@ class MissionNode(Node):
         assert self.position is not None
         if self.takeoff_point is None:
             self.takeoff_point = self.position
-        cruise_z = -abs(float(self.get_parameter("cruise_altitude_m").value))
+        cruise_z = self._cruise_z()
         self._setpoint(self.takeoff_point[0], self.takeoff_point[1], cruise_z, self.yaw)
         if abs(self.position[2] - cruise_z) <= 0.5:
             self._transition(MissionState.PLANNING)
@@ -527,9 +537,8 @@ class MissionNode(Node):
                 self._transition(MissionState.PLANNING)
             return
         north, east = self.path[self.path_index]
-        target_z = self.destination[2]
         yaw = math.atan2(east - self.position[1], north - self.position[0])
-        self._setpoint(north, east, target_z, yaw)
+        self._setpoint(north, east, self._flight_z(), yaw)
         if math.dist(self.position[:2], (north, east)) <= float(
             self.get_parameter("arrival_tolerance_m").value
         ):
@@ -537,8 +546,9 @@ class MissionNode(Node):
 
     def _approach(self) -> None:
         assert self.position and self.destination
-        self._setpoint(*self.destination, self.yaw)
-        if math.dist(self.position, self.destination) <= float(
+        target = (self.destination[0], self.destination[1], self._flight_z())
+        self._setpoint(*target, self.yaw)
+        if math.dist(self.position, target) <= float(
             self.get_parameter("arrival_tolerance_m").value
         ):
             self._transition(MissionState.LANDING_CHECK)
