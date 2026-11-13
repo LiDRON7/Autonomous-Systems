@@ -171,6 +171,7 @@ class MissionNode(Node):
             "map.expiry_s": 2.0,
             "map.sensor_translation_flu_m": [0.0, 0.0, 0.0],
             "map.sensor_pitch_down_deg": 0.0,
+            "map.min_range_m": 0.2,
             "map.min_height_m": -1.5,
             "map.max_height_m": 1.5,
             "destination.north": 8.0,
@@ -312,6 +313,7 @@ class MissionNode(Node):
             float(self.get_parameter("map.max_height_m").value),
             self.get_parameter("map.sensor_translation_flu_m").value,
             math.radians(float(self.get_parameter("map.sensor_pitch_down_deg").value)),
+            float(self.get_parameter("map.min_range_m").value),
         )
         now = self._now()
         self.grid_origin = self.grid.origin_around(self.position[:2])

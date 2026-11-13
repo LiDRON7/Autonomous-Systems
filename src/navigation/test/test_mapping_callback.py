@@ -28,7 +28,7 @@ def mission_methods(**overrides):
                  depth_points_to_world=depth_points_to_world, astar=astar, simplify=simplify,
                  MissionState=MissionState, ACTIVE_STATES=set(), String=lambda **kw: kw, MAX_CLOUD_POINTS=5000)
     exec(compile(ast.fix_missing_locations(module), str(source), 'exec'), scope)
-    parameters = {'map.min_height_m': -1.5, 'map.max_height_m': 1.5,
+    parameters = {'map.min_height_m': -1.5, 'map.max_height_m': 1.5, 'map.min_range_m': 0.2,
                   'map.sensor_translation_flu_m': [0.0, 0.0, 0.0], 'map.sensor_pitch_down_deg': 0.0}
     node = SimpleNamespace(position=(0, 0, -5), yaw=0.0, now=10.0, stamps={},
                            grid=RollingGrid(inflation_m=0.0), grid_origin=(0, 0),

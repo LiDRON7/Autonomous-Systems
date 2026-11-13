@@ -9,3 +9,6 @@ mission:
     # Camera lens from the centre of mass, and its 10 deg downward tilt.
     map.sensor_translation_flu_m: [0.134, 0.0, -0.037]
     map.sensor_pitch_down_deg: 10.0
+    # The camera sees the two front prop guards 0.2 to 0.35 m away (top of the image). Without this cutoff they
+    # are mapped as obstacles on top of the drone and the planner finds no route. Seen in the simulator.
+    map.min_range_m: 0.6
