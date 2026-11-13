@@ -9,3 +9,5 @@ mission:
     # Camera lens from the centre of mass, and its 10 deg downward tilt.
     map.sensor_translation_flu_m: [0.083, 0.0, -0.047]
     map.sensor_pitch_down_deg: 10.0
+    # The camera catches a sliver of the frame at 0.2 m (seen in the simulator); keep it out of the map.
+    map.min_range_m: 0.4

@@ -56,3 +56,10 @@ def test_camera_pitched_down_does_not_turn_far_ground_into_an_obstacle():
     level = [4 * math.cos(pitch), 0.0, 4 * math.sin(pitch)]
     world, _ = depth_points_to_world([level], (0, 0, -5), 0, -1.5, 1.5, pitch_down=pitch)
     np.testing.assert_allclose(world, [(4, 0)], atol=1e-9)
+
+
+def test_min_range_drops_the_drones_own_guards():
+    raw = [[0.3, 0.2, 0.05], [0.3, -0.2, 0.05], [4.0, 0.0, 0.0]]   # two guard hits and a real obstacle
+    assert len(depth_points_to_world(raw, (0, 0, 0), 0, -1.5, 1.5)[0]) == 3
+    world, count = depth_points_to_world(raw, (0, 0, 0), 0, -1.5, 1.5, min_range=0.6)
+    assert count == 3 and world == [(4.0, 0.0)]
