@@ -1,5 +1,6 @@
 """Exercise real mission methods without requiring a ROS installation."""
 import ast
+import math
 from pathlib import Path
 from types import MethodType, SimpleNamespace
 
@@ -12,13 +13,14 @@ def mission():
     source = Path(__file__).parents[1] / 'navigation/mission_node.py'
     cls = next(n for n in ast.parse(source.read_text()).body
                if isinstance(n, ast.ClassDef) and n.name == 'MissionNode')
-    names = {'_transition', '_preflight', '_takeoff', '_landing_check'}
+    names = {'_transition', '_cruise_z', '_flight_z', '_preflight', '_takeoff', '_navigate', '_approach',
+             '_landing_check'}
     methods = [n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name in names]
-    scope = dict(MissionState=MissionState, can_transition=can_transition,
+    scope = dict(math=math, MissionState=MissionState, can_transition=can_transition,
                  VehicleCommand=SimpleNamespace(VEHICLE_CMD_DO_SET_MODE=176,
                      VEHICLE_CMD_COMPONENT_ARM_DISARM=400, VEHICLE_CMD_NAV_LAND=21))
     exec(compile(ast.Module(body=methods, type_ignores=[]), str(source), 'exec'), scope)
-    parameters = dict(cruise_altitude_m=5, require_lidar=True,
+    parameters = dict(cruise_altitude_m=5, require_lidar=True, arrival_tolerance_m=0.75,
                       landing_confirmations=8, landing_check_timeout_s=5)
     node = SimpleNamespace(state=MissionState.IDLE, position=(0., 0., 0.),
                            takeoff_point=None, landing_check_point=None,
@@ -136,3 +138,29 @@ def test_landing_command_preserves_confirmation_and_no_lidar_behavior(require_li
     node._landing_check()
     assert node.commands == [(21, {})]
     assert node.state == MissionState.LANDING
+
+
+def test_cruise_height_is_above_the_pad_not_px4_origin():
+    node, _ = mission()
+    node._transition(MissionState.PREFLIGHT)
+    node.position = (0., 0., 2.)  # estimator has drifted 2 m down while sitting on the pad
+    node._preflight()
+    assert node.targets[-1][2] == -3.
+
+
+@pytest.mark.parametrize('down, flown', [(0., -5.), (40., -5.), (-3., -5.), (-12., -12.)])
+def test_destination_down_never_flies_below_cruise(down, flown):
+    node, _ = mission()
+    node.takeoff_point = (0., 0., 0.)
+    node.position = (0., 0., -5.)
+    node.destination = (8., 0., down)
+    node.obstacle_detected = False
+    node.path, node.path_index = [(0., 0.), (8., 0.)], 1
+    node.state = MissionState.NAVIGATING
+    node._navigate()
+    assert node.targets[-1][2] == flown
+    node.state = MissionState.APPROACH
+    node.position = (8., 0., flown)
+    node._approach()
+    assert node.targets[-1][:3] == (8., 0., flown)
+    assert node.state == MissionState.LANDING_CHECK

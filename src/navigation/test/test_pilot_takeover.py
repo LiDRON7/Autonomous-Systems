@@ -287,6 +287,7 @@ def test_normal_preflight_takeoff_and_navigation_still_work(node):
         node._tick()
     assert node.state == MissionState.TAKEOFF
     assert [msg.command for msg in node.command_pub.messages] == [176, 400]
+    node.position = (0.0, 0.0, node.takeoff_point[2] - 5.0)  # climbed to cruise height
     status(node, VehicleStatus.NAVIGATION_STATE_OFFBOARD)
     node._tick()
     assert node.state == MissionState.PLANNING
