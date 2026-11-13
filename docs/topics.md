@@ -14,7 +14,7 @@ Published by the [Sensor-Control-Data-Gathering](https://github.com/LiDRON7/Sens
 | `/oakd/depth/points` | `sensor_msgs/PointCloud2` | `oak-d` | mission ([mission_node.py](../src/navigation/navigation/mission_node.py)), diagnostics | Obstacle map for path planning |
 | `/lidar/points` | `sensor_msgs/PointCloud2` | `velodyne` | perception, diagnostics | Landing-zone check |
 
-The Velodyne driver publishes `/velodyne_points`, not `/lidar/points`. When the LiDAR is mounted, set `lidar_topic: /velodyne_points` for perception in `hardware.yaml` and change the diagnostics subscription to match.
+The Velodyne driver publishes `/velodyne_points`, not `/lidar/points`, so `hardware.yaml` sets `lidar_topic: /velodyne_points` for perception and the preflight check. The simulator publishes `/lidar/points`.
 
 ## From PX4
 

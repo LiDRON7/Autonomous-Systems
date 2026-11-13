@@ -26,10 +26,10 @@ def mission_methods(**overrides):
     module = ast.Module(body=[ast.ImportFrom(module='__future__', names=[ast.alias(name='annotations')], level=0), *methods], type_ignores=[])
     scope = dict(np=np, math=__import__("math"), point_cloud2=SimpleNamespace(read_points_numpy=lambda msg, **kw: msg.points),
                  depth_points_to_world=depth_points_to_world, astar=astar, simplify=simplify,
-                 MissionState=MissionState, ACTIVE_STATES=set(), String=lambda **kw: kw)
+                 MissionState=MissionState, ACTIVE_STATES=set(), String=lambda **kw: kw, MAX_CLOUD_POINTS=5000)
     exec(compile(ast.fix_missing_locations(module), str(source), 'exec'), scope)
     parameters = {'map.min_height_m': -1.5, 'map.max_height_m': 1.5,
-                  'map.sensor_translation_flu_m': [0.0, 0.0, 0.0]}
+                  'map.sensor_translation_flu_m': [0.0, 0.0, 0.0], 'map.sensor_pitch_down_deg': 0.0}
     node = SimpleNamespace(position=(0, 0, -5), yaw=0.0, now=10.0, stamps={},
                            grid=RollingGrid(inflation_m=0.0), grid_origin=(0, 0),
                            state=MissionState.IDLE, mission_started=None,
@@ -58,6 +58,16 @@ def test_actual_callback_inserts_expected_obstacle_and_stamps_depth():
     assert cell in node.grid.occupied
     assert node.stamps['depth'] == 10.0
     assert len(node.published) == 1
+
+
+def test_callback_thins_a_full_resolution_cloud():
+    node = mission_methods()
+    seen = []
+    real = node._on_depth_points.__func__.__globals__['depth_points_to_world']
+    node._on_depth_points.__func__.__globals__['depth_points_to_world'] = (
+        lambda raw, *args: (seen.append(len(raw)), real(raw, *args))[1])
+    node._on_depth_points(SimpleNamespace(points=np.tile([[3.0, 1.0, 0.0]], (300000, 1))))
+    assert seen[0] <= 5000
 
 
 def test_callback_without_position_does_not_claim_fresh_depth():

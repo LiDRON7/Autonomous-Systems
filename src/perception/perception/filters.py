@@ -34,6 +34,22 @@ class PassThroughBounds:
             raise ValueError("ROI must contain the landing footprint and clearance area")
 
 
+def lidar_to_landing_frame(points: np.ndarray, mount_rpy_deg=(180.0, 0.0, 0.0)) -> np.ndarray:
+    """Turn LiDAR-frame points into the frame the landing check reads: x forward, y right, z down.
+
+    mount_rpy_deg is how the LiDAR's own frame sits on the drone (roll, pitch, yaw about fixed
+    x, y, z; body x forward, y left, z up), the same three numbers as the simulator's <pose>.
+    The default, 180 deg of roll, is a LiDAR hanging upside down: its frame already is the
+    landing frame, so nothing changes.
+    """
+    r, p, y = np.radians(np.asarray(mount_rpy_deg, dtype=float))
+    rx = np.array([[1, 0, 0], [0, np.cos(r), -np.sin(r)], [0, np.sin(r), np.cos(r)]])
+    ry = np.array([[np.cos(p), 0, np.sin(p)], [0, 1, 0], [-np.sin(p), 0, np.cos(p)]])
+    rz = np.array([[np.cos(y), -np.sin(y), 0], [np.sin(y), np.cos(y), 0], [0, 0, 1]])
+    to_landing = np.diag([1.0, -1.0, -1.0]) @ rz @ ry @ rx
+    return (np.asarray(points, dtype=np.float64).reshape((-1, 3)) @ to_landing.T).astype(np.float32)
+
+
 def finite_points(points: np.ndarray) -> np.ndarray:
     """Return only finite XYZ points."""
     cloud = np.asarray(points, dtype=np.float32).reshape((-1, 3))

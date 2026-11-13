@@ -11,7 +11,9 @@ Parameters, tests and troubleshooting. Topics and services are in [topics.md](to
 
 The container picks the file from `AUTONOMY_CONFIG` (`simulation` or `hardware`). Restart it after changing parameters: `docker restart lidron_autonomy`.
 
-LiDAR filters, all in meters and in the LiDAR frame:
+The LiDAR cloud is first turned into the landing frame (x forward, y right, z down) with `lidar_mount_rpy_deg`: how the LiDAR's own frame sits on the drone, as roll, pitch, yaw in degrees. `[180, 0, 0]` is a LiDAR hanging upside down; `[90, 135, 0]` is Huntsman's Puck LITE on its side. The camera has `map.sensor_translation_flu_m` (lens from the centre of mass) and `map.sensor_pitch_down_deg` (its downward tilt).
+
+LiDAR filters, all in meters and in the landing frame:
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |

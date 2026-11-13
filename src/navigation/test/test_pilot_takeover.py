@@ -11,7 +11,9 @@ from navigation.state import MissionState
 class VehicleStatus(SimpleNamespace):
     # Match the px4_msgs v1.15.0 definitions pinned by integration/Dockerfile.
     NAVIGATION_STATE_POSCTL = 2
+    NAVIGATION_STATE_AUTO_RTL = 5
     NAVIGATION_STATE_OFFBOARD = 14
+    NAVIGATION_STATE_AUTO_LAND = 18
     ARMING_STATE_DISARMED = 1
     ARMING_STATE_ARMED = 2
 
@@ -156,6 +158,29 @@ def test_takeover_stops_every_executing_stage(node, stage):
     assert counts(node) == (0, 0, 0)
 
 
+@pytest.mark.parametrize("mode", [0, 1, 4, VehicleStatus.NAVIGATION_STATE_AUTO_RTL, 12, 15,
+                                  VehicleStatus.NAVIGATION_STATE_AUTO_LAND])
+def test_any_mode_but_offboard_is_a_takeover(node, mode):
+    # Manual, Altitude, Hold, RTL, Descend (failsafe), Stabilized, Land from QGroundControl.
+    status(node, VehicleStatus.NAVIGATION_STATE_OFFBOARD)
+    status(node, mode)
+    node.now += 400.0  # Past the mission timeout: no late NAV_LAND may override the pilot.
+    node._tick()
+    assert node.state == MissionState.PILOT_OVERRIDE
+    assert counts(node) == (0, 0, 0)
+
+
+def test_our_own_landing_is_not_a_takeover(node):
+    status(node, VehicleStatus.NAVIGATION_STATE_OFFBOARD)
+    node.state = MissionState.LANDING
+    status(node, VehicleStatus.NAVIGATION_STATE_AUTO_LAND)
+    assert node.state == MissionState.LANDING
+    # PX4 may change mode once it has disarmed on the ground: that still completes the mission.
+    status(node, VehicleStatus.NAVIGATION_STATE_POSCTL, VehicleStatus.ARMING_STATE_DISARMED)
+    node._tick()
+    assert node.state == MissionState.COMPLETE
+
+
 def test_initial_position_and_idle_status_do_not_claim_takeover(node):
     node.state = MissionState.IDLE
     status(node, VehicleStatus.NAVIGATION_STATE_OFFBOARD)
@@ -201,26 +226,18 @@ def test_direct_publishers_and_abort_cannot_bypass_override(node):
 
 
 @pytest.mark.parametrize("case", [
-    "missing_status", "missing_land", "stale_status", "stale_land",
-    "future_status", "future_land", "armed", "airborne", "no_destination",
+    "missing_status", "stale_status", "future_status", "armed", "no_destination",
 ])
 def test_restart_rejects_unconfirmed_ground_state(node, case):
     takeover(node)
     status(node, arming=VehicleStatus.ARMING_STATE_DISARMED)
-    node._on_land(SimpleNamespace(landed=True))
     if case == "missing_status":
         node.vehicle_status = None
         node.stamps["status"] = None
-    elif case == "missing_land":
-        node.land_stamp = None  # Default landed=True is not evidence.
     elif case in {"stale_status", "future_status"}:
         node.stamps["status"] = node.now + (1.0 if case == "future_status" else -2.0)
-    elif case in {"stale_land", "future_land"}:
-        node.land_stamp = node.now + (1.0 if case == "future_land" else -2.0)
     elif case == "armed":
         status(node)
-    elif case == "airborne":
-        node._on_land(SimpleNamespace(landed=False))
     else:
         node.destination = None
     assert not enable(node).success
@@ -228,10 +245,10 @@ def test_restart_rejects_unconfirmed_ground_state(node, case):
     assert counts(node) == (0, 0, 0)
 
 
-def test_explicit_enable_restarts_with_fresh_landed_disarmed_status(node):
+def test_explicit_enable_restarts_with_fresh_disarmed_status(node):
+    # PX4 1.15 never sends vehicle_land_detected over DDS, so disarmed is all we can ask for.
     takeover(node)
     status(node, arming=VehicleStatus.ARMING_STATE_DISARMED)
-    node._on_land(SimpleNamespace(landed=True))
     node.destination = (9.0, 1.0, -5.0)  # Previous landing-search target.
     node.landing_confirmations = 8
     node.search_index = 3
