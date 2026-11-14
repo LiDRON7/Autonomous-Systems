@@ -29,7 +29,7 @@ Clone [Simulation](https://github.com/LiDRON7/Simulation) next to this repo, the
 ./scripts/simulation.sh up
 ```
 
-`./scripts/simulation.sh down` stops it. `DRONE=` in `Simulation/.env` picks the drone for both the simulator and the autonomy config. Machine setup (Linux, macOS, Windows) is in the Simulation README.
+`./scripts/sim_scenarios.sh` then flies every way a mission can end (A to B, around a tree, abort, pause, pilot takeover, a bad landing spot, crashes) and says PASS or FAIL; results are in the Simulation README. `./scripts/simulation.sh down` stops it. `DRONE=` in `Simulation/.env` picks the drone for both the simulator and the autonomy config. Machine setup (Linux, macOS, Windows) is in the Simulation README.
 
 ## Fly a mission
 
