@@ -23,6 +23,8 @@ done
 export AUTONOMY_ROOT="$autonomy_root"
 compose=(docker compose --project-directory "$simulation_root" \
   -f "$simulation_compose" -f "$autonomy_compose")
+# NVIDIA GPU with the container toolkit: render the camera and LiDAR on it (real time instead of a crawl).
+if docker info 2>/dev/null | grep -q "Runtimes:.*nvidia"; then compose+=(-f "$simulation_root/docker-compose.gpu.yml"); fi
 
 case "${1:-up}" in
   # The autonomy container rebuilds its workspace when src/ or the Dockerfile change (integration/entrypoint.sh).
