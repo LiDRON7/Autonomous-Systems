@@ -6,6 +6,12 @@ import numpy as np
 
 from .ground_segmentation import ransac_ground_inliers
 
+# Returns below the ground plane it takes to call an edge (one or two can be reflections off wet ground).
+EDGE_MIN_POINTS = 5
+
+# Returns below the ground plane it takes to call an edge (one or two can be reflections off wet ground).
+EDGE_MIN_POINTS = 5
+
 
 @dataclass(frozen=True)
 class LandingLimits:
@@ -112,5 +118,14 @@ def evaluate_landing_zone(
         if clear_radius < limits.clearance_m:
             return result(LandingAssessment(
                 False, "obstacle_inside_clearance", count, slope, roughness, clear_radius
+            ))
+    # Many points well below the plane mean an edge: the "ground" is a crate top, a roof or a ledge.
+    # The simulator landed Huntsman on a crate before this. A few stray returns below ground are normal.
+    dropped = cloud[heights > limits.obstacle_height_m]
+    if len(dropped) >= EDGE_MIN_POINTS:
+        edge = float(np.sort(np.linalg.norm(dropped[:, :2], axis=1))[EDGE_MIN_POINTS - 1])
+        if edge < limits.clearance_m:
+            return result(LandingAssessment(
+                False, "edge_inside_clearance", count, slope, roughness, edge
             ))
     return result(LandingAssessment(True, "safe", count, slope, roughness, clear_radius))
