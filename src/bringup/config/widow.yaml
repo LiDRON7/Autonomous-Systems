@@ -11,3 +11,5 @@ mission:
     map.sensor_pitch_down_deg: 10.0
     # The camera catches a sliver of the frame at 0.2 m (seen in the simulator); keep it out of the map.
     map.min_range_m: 0.4
+    # Same as hardware.yaml, so the sim flies what the drone flies.
+    map.inflation_m: 1.25

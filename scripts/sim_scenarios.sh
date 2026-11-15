@@ -217,7 +217,8 @@ scenario_autonomy_crash() {
   echo "  killing mission_node mid-flight"; ros "pkill -f mission_node" >/dev/null
   sim_sleep 6
   local ns; ns="$(nav_state)"
-  [[ "$ns" != 14 ]] && ok "PX4 left Offboard on its own (nav_state $ns)" || fail "PX4 still in Offboard 6 s after the stream stopped"
+  # COM_OBL_RC_ACT 4 (Land), as on the real Pixhawk (#125).
+  [[ "$ns" == 18 ]] && ok "PX4 left Offboard and is landing (nav_state 18)" || fail "PX4 nav_state $ns 6 s after the stream stopped, expected 18 (Land)"
   sim_sleep 10
   read -r e2 n2 u2 _ <<<"$(pose)"
   local d; d=$(calc "printf \"%.2f\", sqrt(($n2-($n))^2+($e2-($e))^2)")

@@ -12,3 +12,5 @@ mission:
     # The camera sees the two front prop guards 0.2 to 0.35 m away (top of the image). Without this cutoff they
     # are mapped as obstacles on top of the drone and the planner finds no route. Seen in the simulator.
     map.min_range_m: 0.6
+    # At 1.0 m it cleared the tree by only 0.15 m once and clipped it once in 7 sim runs (#126).
+    map.inflation_m: 1.5
