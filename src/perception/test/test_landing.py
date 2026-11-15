@@ -104,11 +104,22 @@ def test_ransac_failure_assessment_is_valid_json():
 
 
 def test_roughness_uses_only_ground_inliers():
-    # Points physically below ground do not count as roughness or raised obstacles.
+    # A 0.5 m deep trench under the drone does not count as roughness, but it is an edge.
     points = np.vstack([flat_plane(), [[0.2, y, 0.5] for y in np.linspace(-0.4, 0.4, 20)]])
     result = assess_landing_zone(points, LandingLimits(ransac_dist_threshold=0.03))
-    assert result.suitable
+    assert result.reason == "edge_inside_clearance"
     assert result.roughness_m < 0.001
+
+
+def test_rejects_crate_top_with_ground_a_metre_below():
+    # Seen in the simulator: Huntsman sent to crate_1 (1 m cube) landed on its lid.
+    lid = np.array([(x, y, 0.0) for x in np.linspace(-0.5, 0.5, 15) for y in np.linspace(-0.5, 0.5, 15)])
+    ring = np.linspace(-2.0, 2.0, 40)
+    ground = np.array([(x, y, 1.0) for x in ring for y in ring if max(abs(x), abs(y)) > 0.55])
+    result = assess_landing_zone(np.vstack([lid, ground]), LandingLimits(ransac_dist_threshold=0.03))
+    assert not result.suitable
+    assert result.reason == "edge_inside_clearance"
+    assert 0.5 < result.clear_radius_m < 0.75
 
 
 def test_self_returns_do_not_inflate_ground_roughness():

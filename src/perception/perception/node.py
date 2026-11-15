@@ -11,7 +11,7 @@ from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Bool, Float32, String
 
 from .depth import minimum_depth
-from .filters import PassThroughBounds, preprocess_landing_cloud
+from .filters import PassThroughBounds, lidar_to_landing_frame, preprocess_landing_cloud
 from .landing import LandingLimits, evaluate_landing_zone
 
 
@@ -20,6 +20,8 @@ class PerceptionNode(Node):
         super().__init__("perception")
         self.declare_parameter("depth_topic", "/oakd/depth/image")
         self.declare_parameter("lidar_topic", "/lidar/points")
+        # How the LiDAR's frame sits on the drone (see filters.lidar_to_landing_frame).
+        self.declare_parameter("lidar_mount_rpy_deg", [180.0, 0.0, 0.0])
         self.declare_parameter("obstacle_threshold_m", 1.5)
         self.declare_parameter("depth_roi_ratio", 0.4)
         self.declare_parameter("landing.footprint_m", 1.2)
@@ -131,7 +133,10 @@ class PerceptionNode(Node):
         self.detected_pub.publish(detected)
 
     def _on_lidar(self, msg: PointCloud2) -> None:
-        points = point_cloud2.read_points_numpy(msg, field_names=("x", "y", "z"))
+        points = lidar_to_landing_frame(
+            point_cloud2.read_points_numpy(msg, field_names=("x", "y", "z")),
+            self.get_parameter("lidar_mount_rpy_deg").value,
+        )
         limits = LandingLimits(
             footprint_m=float(self.get_parameter("landing.footprint_m").value),
             min_points=int(self.get_parameter("landing.min_points").value),

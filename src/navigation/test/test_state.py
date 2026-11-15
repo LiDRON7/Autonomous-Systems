@@ -33,5 +33,21 @@ def test_every_active_stage_can_abort():
         MissionState.IDLE,
         MissionState.COMPLETE,
         MissionState.ABORT,
+        MissionState.PILOT_OVERRIDE,
     }
     assert all(can_transition(state, MissionState.ABORT) for state in active)
+
+
+def test_executing_stages_can_relinquish_control_to_pilot():
+    executing = set(MissionState) - {
+        MissionState.IDLE, MissionState.COMPLETE, MissionState.ABORT,
+        MissionState.PILOT_OVERRIDE,
+    }
+    assert all(can_transition(state, MissionState.PILOT_OVERRIDE) for state in executing)
+
+
+def test_pilot_override_only_allows_a_new_preflight():
+    for state in MissionState:
+        assert can_transition(MissionState.PILOT_OVERRIDE, state) == (
+            state in {MissionState.PILOT_OVERRIDE, MissionState.PREFLIGHT}
+        )

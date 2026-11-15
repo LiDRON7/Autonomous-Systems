@@ -1,11 +1,15 @@
+# Settings for flying on the Pi. The drone's own numbers come from widow.yaml or huntsman.yaml.
 /**:
   ros__parameters:
     use_sim_time: false
+    # Off until Huntsman's LiDAR frame is checked in RViz with the sensor mounted. Widow never uses it (widow.yaml).
+    require_lidar: false
+    # The Velodyne driver's topic. Perception and the preflight check both read it from here.
+    lidar_topic: /velodyne_points
 
 perception:
   ros__parameters:
     depth_topic: /oakd/depth/image
-    lidar_topic: /lidar/points
     obstacle_threshold_m: 2.0
     depth_roi_ratio: 0.4
     landing.footprint_m: 1.5

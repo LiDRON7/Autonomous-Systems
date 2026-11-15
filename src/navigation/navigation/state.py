@@ -16,32 +16,42 @@ class MissionState(str, Enum):
     COMPLETE = "COMPLETE"
     HOLD = "HOLD"
     ABORT = "ABORT"
+    PILOT_OVERRIDE = "PILOT_OVERRIDE"
 
 
 ALLOWED_TRANSITIONS = {
     MissionState.IDLE: {MissionState.PREFLIGHT, MissionState.HOLD},
-    MissionState.PREFLIGHT: {MissionState.TAKEOFF, MissionState.HOLD, MissionState.ABORT},
-    MissionState.TAKEOFF: {MissionState.PLANNING, MissionState.HOLD, MissionState.ABORT},
-    MissionState.PLANNING: {MissionState.NAVIGATING, MissionState.HOLD, MissionState.ABORT},
+    MissionState.PREFLIGHT: {
+        MissionState.TAKEOFF, MissionState.HOLD, MissionState.ABORT, MissionState.PILOT_OVERRIDE,
+    },
+    MissionState.TAKEOFF: {
+        MissionState.PLANNING, MissionState.HOLD, MissionState.ABORT, MissionState.PILOT_OVERRIDE,
+    },
+    MissionState.PLANNING: {
+        MissionState.NAVIGATING, MissionState.HOLD, MissionState.ABORT, MissionState.PILOT_OVERRIDE,
+    },
     MissionState.NAVIGATING: {
         MissionState.PLANNING,
         MissionState.REPLANNING,
         MissionState.APPROACH,
         MissionState.HOLD,
         MissionState.ABORT,
+        MissionState.PILOT_OVERRIDE,
     },
-    MissionState.REPLANNING: {MissionState.NAVIGATING, MissionState.HOLD, MissionState.ABORT},
-    MissionState.APPROACH: {MissionState.LANDING_CHECK, MissionState.HOLD, MissionState.ABORT},
+    MissionState.REPLANNING: {MissionState.NAVIGATING, MissionState.HOLD, MissionState.ABORT, MissionState.PILOT_OVERRIDE },
+    MissionState.APPROACH: {MissionState.LANDING_CHECK, MissionState.HOLD, MissionState.ABORT, MissionState.PILOT_OVERRIDE},
     MissionState.LANDING_CHECK: {
         MissionState.LANDING,
         MissionState.PLANNING,
         MissionState.HOLD,
         MissionState.ABORT,
+        MissionState.PILOT_OVERRIDE,
     },
-    MissionState.LANDING: {MissionState.COMPLETE, MissionState.ABORT},
-    MissionState.HOLD: {MissionState.REPLANNING, MissionState.ABORT},
+    MissionState.LANDING: {MissionState.COMPLETE, MissionState.ABORT, MissionState.PILOT_OVERRIDE },
+    MissionState.HOLD: {MissionState.REPLANNING, MissionState.ABORT, MissionState.PILOT_OVERRIDE },
     MissionState.COMPLETE: {MissionState.PREFLIGHT},
     MissionState.ABORT: {MissionState.PREFLIGHT},
+    MissionState.PILOT_OVERRIDE: {MissionState.PREFLIGHT},
 }
 
 

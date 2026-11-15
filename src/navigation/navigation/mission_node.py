@@ -12,7 +12,6 @@ from px4_msgs.msg import (
     VehicleAttitude,
     VehicleCommand,
     VehicleCommandAck,
-    VehicleLandDetected,
     VehicleLocalPosition,
     VehicleStatus,
 )
@@ -30,6 +29,8 @@ from .grid import RollingGrid
 from .mapping import depth_points_to_world
 from .planner import astar, landing_search_offset, simplify
 from .state import MissionState, can_transition, data_is_fresh
+
+MAX_CLOUD_POINTS = 5000
 
 ACTIVE_STATES = {
     MissionState.PREFLIGHT,
@@ -77,9 +78,6 @@ class MissionNode(Node):
             VehicleAttitude, "/fmu/out/vehicle_attitude", self._on_attitude, px4_qos
         )
         self.create_subscription(
-            VehicleLandDetected, "/fmu/out/vehicle_land_detected", self._on_land, px4_qos
-        )
-        self.create_subscription(
             VehicleCommandAck, "/fmu/out/vehicle_command_ack", self._on_command_ack, px4_qos
         )
         self.create_subscription(
@@ -90,6 +88,9 @@ class MissionNode(Node):
         )
         self.create_subscription(
             String, "/landing/assessment", self._on_landing_assessment, 10
+        )
+        self.create_subscription(
+            String, "/autonomy/preflight_result", self._on_preflight_result, 10
         )
         self.create_service(
             SetLocalDestination, "/autonomy/set_local_destination", self._set_local
@@ -106,13 +107,20 @@ class MissionNode(Node):
         self.destination: tuple[float, float, float] | None = None
         self.original_destination: tuple[float, float, float] | None = None
         self.yaw = 0.0
+        self.roll = 0.0
+        self.pitch = 0.0
         self.vehicle_status: VehicleStatus | None = None
-        self.landed = True
+        self.preflight_passed_at: float | None = None
+
+        self.offboard_seen = False
+
         self.stamps: dict[str, float | None] = {
             "position": None,
             "depth": None,
             "lidar": None,
             "status": None,
+            # #96: a dead perception node left the last obstacle flag in place; now its silence means HOLD.
+            "obstacle": None,
         }
         self.obstacle_detected = False
         self.landing_suitable = False
@@ -127,10 +135,14 @@ class MissionNode(Node):
         self.path: list[tuple[float, float]] = []
         self.path_index = 0
         self.hold_point: tuple[float, float, float] | None = None
+        self.takeoff_point: tuple[float, float, float] | None = None
+        self.landing_check_point: tuple[float, float, float] | None = None
+        self.operator_hold = False
         self.state_started = self._now()
         self.mission_started: float | None = None
         self.offboard_warmup = 0
         self.last_command_ack: tuple[int, int] | None = None
+        self.pending_commands: set[int] = set()
         self.search_index = 0
         self.timer = self.create_timer(0.1, self._tick)
         auto_start = bool(self.get_parameter("auto_start").value)
@@ -151,6 +163,7 @@ class MissionNode(Node):
         values = {
             "auto_start": False,
             "hardware_mode": False,
+            "require_lidar": True,
             "cruise_altitude_m": 5.0,
             "arrival_tolerance_m": 0.75,
             "sensor_timeout_s": 1.0,
@@ -165,6 +178,8 @@ class MissionNode(Node):
             "map.inflation_m": 1.0,
             "map.expiry_s": 2.0,
             "map.sensor_translation_flu_m": [0.0, 0.0, 0.0],
+            "map.sensor_pitch_down_deg": 0.0,
+            "map.min_range_m": 0.2,
             "map.min_height_m": -1.5,
             "map.max_height_m": 1.5,
             "destination.north": 8.0,
@@ -185,8 +200,12 @@ class MissionNode(Node):
         self.get_logger().info(f"Mission {self.state.value} -> {state.value}")
         self.state = state
         self.state_started = self._now()
+        if state == MissionState.PREFLIGHT:
+            self.takeoff_point = None
+            self.landing_check_point = None
         if state == MissionState.LANDING_CHECK:
             self.landing_confirmations = 0
+            self.landing_check_point = self.position
         if state == MissionState.HOLD and self.position:
             self.hold_point = self.position
 
@@ -201,25 +220,83 @@ class MissionNode(Node):
     def _on_status(self, msg: VehicleStatus) -> None:
         self.vehicle_status = msg
         self.stamps["status"] = self._now()
+        if self.state not in ACTIVE_STATES and self.state != MissionState.LANDING:
+            return
+        if msg.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
+            self.offboard_seen = True
+        elif (
+            self.offboard_seen
+            and msg.arming_state == VehicleStatus.ARMING_STATE_ARMED
+            and not (
+                self.state == MissionState.LANDING
+                and msg.nav_state == VehicleStatus.NAVIGATION_STATE_AUTO_LAND
+            )
+        ):
+            # Any other mode while armed: the pilot, QGroundControl (Land, RTL, Hold) or a
+            # PX4 failsafe took over. Stop commanding, or a later abort would override them.
+            self._pilot_takeover(int(msg.nav_state))
+
+    def _pilot_takeover(self, nav_state: int) -> None:
+        """Relinquish autonomy without asking PX4 to land or change modes."""
+        self._transition(MissionState.PILOT_OVERRIDE)
+        self.mission_started = None
+        self.offboard_warmup = 0
+        self.path.clear()
+        self.path_index = 0
+        self.hold_point = None
+        self.get_logger().warning(
+            f"PX4 left Offboard (nav_state {nav_state}): pilot or failsafe has control; autonomy stopped"
+        )
 
     def _on_attitude(self, msg: VehicleAttitude) -> None:
         w, x, y, z = (float(value) for value in msg.q)
         self.yaw = math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
-
-    def _on_land(self, msg: VehicleLandDetected) -> None:
-        self.landed = bool(msg.landed)
+        self.roll = math.atan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y))
+        self.pitch = math.asin(max(-1.0, min(1.0, 2.0 * (w * y - z * x))))
 
     def _on_command_ack(self, msg: VehicleCommandAck) -> None:
-        self.last_command_ack = int(msg.command), int(msg.result)
-        accepted = {
-            VehicleCommandAck.VEHICLE_CMD_RESULT_ACCEPTED,
-            VehicleCommandAck.VEHICLE_CMD_RESULT_IN_PROGRESS,
-        }
-        if int(msg.result) not in accepted and self.state in ACTIVE_STATES:
-            self._safe_abort(f"PX4 rejected command {msg.command}: result {msg.result}")
+        command = int(msg.command)
+        result = int(msg.result)
+
+        if bool(msg.from_external):
+            self.get_logger().debug(
+                f"Ignored external acknowledgement for command {command}: "
+                f"result {result}"
+            )
+            return
+
+        # PX4 addresses each ack to the command's sender; _command sends as 1/1.
+        if (int(msg.target_system), int(msg.target_component)) != (1, 1):
+            self.get_logger().debug(
+                f"Ignored acknowledgement for another sender's command {command}: "
+                f"result {result}"
+            )
+            return
+
+        if command not in self.pending_commands:
+            self.get_logger().debug(
+                f"Ignored acknowledgement for untracked command {command}: "
+                f"result {result}"
+            )
+            return
+        self.last_command_ack = command, result
+
+        if result == VehicleCommandAck.VEHICLE_CMD_RESULT_IN_PROGRESS:
+            return
+
+        self.pending_commands.discard(command)
+
+        if (
+            result != VehicleCommandAck.VEHICLE_CMD_RESULT_ACCEPTED
+            and self.state in ACTIVE_STATES
+        ):
+            self._safe_abort(
+                f"PX4 rejected Autonomous command {command}: result {result}"
+            )
 
     def _on_obstacle(self, msg: Bool) -> None:
         self.obstacle_detected = bool(msg.data)
+        self.stamps["obstacle"] = self._now()
 
     def _on_landing_assessment(self, msg: String) -> None:
         try:
@@ -238,11 +315,22 @@ class MissionNode(Node):
         if self.position is None:
             return
         raw = point_cloud2.read_points_numpy(msg, field_names=("x", "y", "z"))
+        # shortcut: keeps every n-th point so a full-resolution cloud (Gazebo sends 300 000) cannot
+        # stall the 10 Hz offboard stream. The drone's camera node already sends about 4 000.
+        raw = raw[::max(1, len(raw) // MAX_CLOUD_POINTS)]
+        translation = self.get_parameter("map.sensor_translation_flu_m").value
+        # Anything lower than the drone's own centre stood on the pad is ground or grass (#102).
+        pad_z = self.takeoff_point[2] if self.takeoff_point else self.position[2]
+        above_pad = pad_z - self.position[2]
+        max_height = float(self.get_parameter("map.max_height_m").value)
+        # Clamped: landed below the pad's height, the cutoff would pass the top of the band and raise.
+        min_height = min(max(float(self.get_parameter("map.min_height_m").value), -(above_pad + translation[2])), max_height)
         world, valid_count = depth_points_to_world(
-            raw, self.position, self.yaw,
-            float(self.get_parameter("map.min_height_m").value),
-            float(self.get_parameter("map.max_height_m").value),
-            self.get_parameter("map.sensor_translation_flu_m").value,
+            raw, self.position, self.yaw, min_height, max_height,
+            translation,
+            math.radians(float(self.get_parameter("map.sensor_pitch_down_deg").value)),
+            float(self.get_parameter("map.min_range_m").value),
+            self.roll, self.pitch,
         )
         now = self._now()
         self.grid_origin = self.grid.origin_around(self.position[:2])
@@ -263,7 +351,10 @@ class MissionNode(Node):
         self._publish_grid()
 
     def _set_local(self, request, response):
-        if self.state not in {MissionState.IDLE, MissionState.COMPLETE, MissionState.ABORT}:
+        if self.state not in {
+            MissionState.IDLE, MissionState.COMPLETE, MissionState.ABORT,
+            MissionState.PILOT_OVERRIDE,
+        }:
             response.accepted = False
             response.message = "mission is active"
             return response
@@ -286,28 +377,86 @@ class MissionNode(Node):
         })()
         return self._set_local(local_request, response)
 
+    def _on_preflight_result(self, msg: String) -> None:
+        # Every new result invalidates the previous pass unless it is valid itself.
+        self.preflight_passed_at = None
+        try:
+            result = json.loads(msg.data)
+            checked_at = float(result["checked_at_s"])
+            if (
+                result["success"] is True
+                and math.isfinite(checked_at)
+                and 0.0 <= self._now() - checked_at <= 30.0
+            ):
+                self.preflight_passed_at = checked_at
+        except (ValueError, TypeError, KeyError, OverflowError):
+            self.get_logger().warning("Ignored malformed preflight result")
+
     def _enable(self, request, response):
+        if self.state == MissionState.PILOT_OVERRIDE:
+            if not request.data:
+                response.success, response.message = False, "pilot override remains active"
+                return response
+            now = self._now()
+            timeout = float(self.get_parameter("sensor_timeout_s").value)
+            # PX4 1.15 does not send vehicle_land_detected over DDS; disarmed is the proof it is down.
+            if not (
+                data_is_fresh(now, self.stamps["status"], timeout)
+                and self.vehicle_status is not None
+                and self.vehicle_status.arming_state == VehicleStatus.ARMING_STATE_DISARMED
+            ):
+                response.success = False
+                response.message = "pilot override: fresh disarmed telemetry required"
+                return response
         if not request.data:
             if self.state not in ACTIVE_STATES:
                 response.success, response.message = False, "mission is not active"
                 return response
+            self.operator_hold = True
             self._transition(MissionState.HOLD)
             response.success, response.message = True, "mission holding"
+            return response
+        if self.state == MissionState.HOLD:
+            self.operator_hold = False
+            response.success, response.message = True, "mission resume requested"
             return response
         if self.destination is None:
             response.success, response.message = False, "set a destination first"
             return response
-        if self.state not in {MissionState.IDLE, MissionState.COMPLETE, MissionState.ABORT}:
+        if self.state not in {
+            MissionState.IDLE, MissionState.COMPLETE, MissionState.ABORT,
+            MissionState.PILOT_OVERRIDE,
+        }:
             response.success, response.message = False, "mission is already active"
             return response
+        if (
+            self.preflight_passed_at is None
+            or not 0.0 <= self._now() - self.preflight_passed_at <= 30.0
+        ):
+            response.success = False
+            response.message = "a passing /autonomy/preflight_check within 30 seconds is required"
+            return response
+        self.preflight_passed_at = None
+        self.operator_hold = False
         self.mission_started = self._now()
+        self.offboard_seen = False
         self.offboard_warmup = 0
         self.search_index = 0
+        self.path.clear()
+        self.path_index = 0
+        self.hold_point = None
+        self.landing_suitable = False
+        self.landing_confirmations = 0
+        self.last_command_ack = None
+        self.destination = self.original_destination or self.destination
         self._transition(MissionState.PREFLIGHT)
         response.success, response.message = True, "preflight started"
         return response
 
     def _abort(self, _request, response):
+        if self.state == MissionState.PILOT_OVERRIDE:
+            response.success, response.message = False, "pilot override: no command sent"
+            return response
         if self.state in {MissionState.IDLE, MissionState.COMPLETE, MissionState.ABORT}:
             response.success, response.message = False, "no active mission"
             return response
@@ -319,11 +468,15 @@ class MissionNode(Node):
     def _health_ok(self) -> bool:
         now = self._now()
         timeout = float(self.get_parameter("sensor_timeout_s").value)
-        return all(data_is_fresh(now, self.stamps[key], timeout) for key in self.stamps)
+        require_lidar = bool(self.get_parameter("require_lidar").value)
+        keys = [key for key in self.stamps if key != "lidar" or require_lidar]
+        return all(data_is_fresh(now, self.stamps[key], timeout) for key in keys)
 
     def _tick(self) -> None:
         self._refresh_grid()
         self.state_pub.publish(String(data=self.state.value))
+        if self.state == MissionState.PILOT_OVERRIDE:
+            return
         if self.state in ACTIVE_STATES:
             self._publish_offboard_mode()
         if self.mission_started and self._now() - self.mission_started > float(
@@ -355,11 +508,23 @@ class MissionNode(Node):
         if handler:
             handler()
 
+    def _cruise_z(self) -> float:
+        # Height above where the drone stood at preflight, not above PX4's origin, which drifts on the pad.
+        ground = self.takeoff_point[2] if self.takeoff_point else 0.0
+        return ground - abs(float(self.get_parameter("cruise_altitude_m").value))
+
+    def _flight_z(self) -> float:
+        # Never below cruise height: a destination's "down" only counts when it is higher (NED, up is negative).
+        assert self.destination
+        return min(self._cruise_z(), self.destination[2])
+
     def _preflight(self) -> None:
         if self.position is None or not self._health_ok():
             return
-        cruise_z = -abs(float(self.get_parameter("cruise_altitude_m").value))
-        self._setpoint(self.position[0], self.position[1], cruise_z, self.yaw)
+        if self.takeoff_point is None:
+            self.takeoff_point = self.position
+        cruise_z = self._cruise_z()
+        self._setpoint(self.takeoff_point[0], self.takeoff_point[1], cruise_z, self.yaw)
         self.offboard_warmup += 1
         if self.offboard_warmup >= 10:
             self._command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, param1=1.0, param2=6.0)
@@ -368,8 +533,10 @@ class MissionNode(Node):
 
     def _takeoff(self) -> None:
         assert self.position is not None
-        cruise_z = -abs(float(self.get_parameter("cruise_altitude_m").value))
-        self._setpoint(self.position[0], self.position[1], cruise_z, self.yaw)
+        if self.takeoff_point is None:
+            self.takeoff_point = self.position
+        cruise_z = self._cruise_z()
+        self._setpoint(self.takeoff_point[0], self.takeoff_point[1], cruise_z, self.yaw)
         if abs(self.position[2] - cruise_z) <= 0.5:
             self._transition(MissionState.PLANNING)
 
@@ -412,9 +579,8 @@ class MissionNode(Node):
                 self._transition(MissionState.PLANNING)
             return
         north, east = self.path[self.path_index]
-        target_z = self.destination[2]
         yaw = math.atan2(east - self.position[1], north - self.position[0])
-        self._setpoint(north, east, target_z, yaw)
+        self._setpoint(north, east, self._flight_z(), yaw)
         if math.dist(self.position[:2], (north, east)) <= float(
             self.get_parameter("arrival_tolerance_m").value
         ):
@@ -422,17 +588,21 @@ class MissionNode(Node):
 
     def _approach(self) -> None:
         assert self.position and self.destination
-        self._setpoint(*self.destination, self.yaw)
-        if math.dist(self.position, self.destination) <= float(
+        target = (self.destination[0], self.destination[1], self._flight_z())
+        self._setpoint(*target, self.yaw)
+        if math.dist(self.position, target) <= float(
             self.get_parameter("arrival_tolerance_m").value
         ):
             self._transition(MissionState.LANDING_CHECK)
 
     def _landing_check(self) -> None:
         assert self.position
-        self._setpoint(*self.position, self.yaw)
+        if self.landing_check_point is None:
+            self.landing_check_point = self.position
+        self._setpoint(*self.landing_check_point, self.yaw)
         required = int(self.get_parameter("landing_confirmations").value)
-        if self.landing_confirmations >= required:
+        # Without a LiDAR there is no landing verdict, so land at the destination.
+        if not self.get_parameter("require_lidar").value or self.landing_confirmations >= required:
             self._command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
             self._transition(MissionState.LANDING)
             return
@@ -463,11 +633,13 @@ class MissionNode(Node):
 
     def _recover_from_hold(self) -> None:
         self._hold()
-        if self._health_ok() and not self.obstacle_detected:
+        if not self.operator_hold and self._health_ok() and not self.obstacle_detected:
             self._transition(MissionState.REPLANNING)
 
     def _wait_for_landing(self) -> None:
-        if self.landed:
+        # PX4 1.15 does not publish vehicle_land_detected over DDS; it disarms after touchdown.
+        status = self.vehicle_status
+        if status is not None and status.arming_state == VehicleStatus.ARMING_STATE_DISARMED:
             self._transition(MissionState.COMPLETE)
 
     def _hold(self) -> None:
@@ -476,19 +648,25 @@ class MissionNode(Node):
             self._setpoint(*target, self.yaw)
 
     def _safe_abort(self, reason: str) -> None:
-        if self.state in {MissionState.ABORT, MissionState.COMPLETE}:
+        if self.state in {
+            MissionState.ABORT, MissionState.COMPLETE, MissionState.PILOT_OVERRIDE,
+        }:
             return
         self.get_logger().error(reason)
         self._command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
         self._transition(MissionState.ABORT)
 
     def _publish_offboard_mode(self) -> None:
+        if self.state == MissionState.PILOT_OVERRIDE:
+            return
         msg = OffboardControlMode()
         msg.position = True
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.offboard_pub.publish(msg)
 
     def _setpoint(self, north: float, east: float, down: float, yaw: float) -> None:
+        if self.state == MissionState.PILOT_OVERRIDE:
+            return
         msg = TrajectorySetpoint()
         msg.position = [float(north), float(east), float(down)]
         msg.yaw = float(yaw)
@@ -496,6 +674,8 @@ class MissionNode(Node):
         self.setpoint_pub.publish(msg)
 
     def _command(self, command: int, **parameters: float) -> None:
+        if self.state == "PILOT_OVERRIDE":
+            return
         msg = VehicleCommand()
         msg.command = command
         for index in range(1, 8):
@@ -506,6 +686,7 @@ class MissionNode(Node):
         msg.source_component = 1
         msg.from_external = True
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
+        self.pending_commands.add(int(command))
         self.command_pub.publish(msg)
 
     def _publish_path(self) -> None:

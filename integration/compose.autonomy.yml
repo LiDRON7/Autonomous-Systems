@@ -17,6 +17,8 @@ services:
     ipc: host
     environment:
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      # Same switch as the simulator (Simulation/.env).
+      - DRONE=${DRONE:-huntsman}
     volumes:
       - ${AUTONOMY_ROOT}:/autonomy
     depends_on:
