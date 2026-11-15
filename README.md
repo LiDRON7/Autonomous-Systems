@@ -63,7 +63,7 @@ It only starts after a preflight check that passed in the last 30 seconds: every
 
 ## In the simulator
 
-These come from the runs on my Ubuntu PC (RTX 3060 Ti, real time, camera and LiDAR on). Every scenario and its result is in the [Simulation README](https://github.com/LiDRON7/Simulation#mission-tests).
+These come from the runs on my Ubuntu PC (RTX 3060 Ti, real time, camera and LiDAR on). Every scenario and its result is in the [Simulation README](https://github.com/LiDRON7/Simulation#test-every-way-a-mission-can-end).
 
 | | |
 | --- | --- |
