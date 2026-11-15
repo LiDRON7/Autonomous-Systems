@@ -73,6 +73,13 @@ def test_ground_on_the_pad_and_on_the_climb_is_not_an_obstacle():
     assert node.grid.to_cell((3, 0), node.grid_origin) not in node.grid.occupied
 
 
+def test_landed_below_the_pad_does_not_crash_the_mapper():
+    # Seen in the sim: the landing spot sat 1.6 m below the pad and the mission node died.
+    node = mission_methods(position=(5, 5, 1.6), takeoff_point=(0, 0, 0))
+    node._on_depth_points(SimpleNamespace(points=[[3, 0, 0.0]]))
+    assert node.stamps['depth'] == 10.0
+
+
 def test_callback_thins_a_full_resolution_cloud():
     node = mission_methods()
     seen = []

@@ -29,7 +29,7 @@ Clone [Simulation](https://github.com/LiDRON7/Simulation) next to this repo, the
 ./scripts/simulation.sh up
 ```
 
-`./scripts/sim_scenarios.sh` then flies every way a mission can end (A to B, around a tree, abort, pause, pilot takeover, a bad landing spot, crashes) and says PASS or FAIL; results are in the Simulation README. `./scripts/simulation.sh down` stops it. `DRONE=` in `Simulation/.env` picks the drone for both the simulator and the autonomy config. Machine setup (Linux, macOS, Windows) is in the Simulation README.
+`./scripts/sim_scenarios.sh` then flies every way a mission can end (A to B, around a tree, abort, pause, pilot takeover, a bad landing spot, crashes) and says PASS or FAIL; results are in the Simulation README. The simulator has no RC transmitter, so `simulation.yaml` sets `require_rc: false` and the preflight check skips the RC link there. On the drone it stays on. `./scripts/simulation.sh down` stops it. `DRONE=` in `Simulation/.env` picks the drone for both the simulator and the autonomy config. Machine setup (Linux, macOS, Windows) is in the Simulation README.
 
 ## Fly a mission
 
@@ -54,18 +54,30 @@ The pilot can take over at any time with the RC transmitter, or switch to Land, 
 
 ## How it decides
 
-The drone takes off to 5 m and flies toward the goal. It replans when the camera sees something closer than 2 m. At the goal it checks the ground with the LiDAR. If the spot is unsafe it tries up to 8 nearby spots, and if none is safe it lands where it is. If any input goes stale it hovers, and after the hold timeout it aborts.
+It only starts after a preflight check that passed in the last 30 seconds: every input fresh, PX4's own checks passed, disarmed, battery fine, no failsafe flags, and a GPS 3D fix with at least 8 satellites. Then it climbs to 5 m above the pad and flies toward the goal on an A* path through the camera's obstacle map, replanning when something shows up. At the goal Huntsman checks the ground with the LiDAR (flat, smooth, nothing sticking up, no drop-off like a crate edge). If the spot is unsafe it tries up to 8 nearby spots, and if none is safe it lands where it is. If any input goes stale it hovers, and after the hold timeout it lands.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/architecture/algorithm-logic-dark.png">
   <img alt="Mission decision loop and landing check" src="docs/architecture/algorithm-logic-light.png">
 </picture>
 
+## In the simulator
+
+These come from the runs on my Ubuntu PC (RTX 3060 Ti, real time, camera and LiDAR on). Every scenario and its result is in the [Simulation README](https://github.com/LiDRON7/Simulation#mission-tests).
+
+| | |
+| --- | --- |
+| <img src="docs/img/114-takeover-path.png" width="420" alt="Flight path when the pilot takes over mid-mission"> | The pilot switches PX4 to Hold mid-mission. The autonomy stands down and doesn't take the drone back (#114). |
+| <img src="docs/img/119-cruise-after.png" width="420" alt="Height over a mission with a ground-level destination"> | A destination at ground level: it still cruises 5 m above the pad and only comes down at the goal (#119). |
+| <img src="docs/img/121-guards-after.png" width="420" alt="Obstacle map without Huntsman's own prop guards"> | Huntsman's camera sees its own prop guards. With `map.min_range_m` they stay out of the map, so the planner finds its way (#121). |
+| <img src="docs/img/crate-after.png" width="420" alt="Huntsman refusing to land on a crate"> | Sent onto a 1 m crate, Huntsman refuses the lid and lands next to it (#124). |
+| <img src="docs/img/avoid-rate.png" width="420" alt="How close each drone came to the tree over every run"> | How close each drone came to the tree over every avoid run (#126). |
+
 ## More
 
-- [Connect to the Pi](https://github.com/LiDRON7/Sensor-Control-Data-Gathering/blob/flight-test/docs/connect-to-pi.md): how to SSH into the drone's Pi, at the university or in the field.
-- [Pi setup](https://github.com/LiDRON7/Sensor-Control-Data-Gathering/blob/flight-test/docs/pi-setup.md): wire the drone's Pi, start the containers and check everything works.
-- [Pi known issues](https://github.com/LiDRON7/Sensor-Control-Data-Gathering/blob/flight-test/docs/pi-known-issues.md): every problem we hit on the Pi, why, and the fix.
+- [Connect to the Pi](https://github.com/LiDRON7/Sensor-Control-Data-Gathering/blob/main/docs/connect-to-pi.md): how to SSH into the drone's Pi, at the university or in the field.
+- [Pi setup](https://github.com/LiDRON7/Sensor-Control-Data-Gathering/blob/main/docs/pi-setup.md): wire the drone's Pi, start the containers and check everything works.
+- [Pi known issues](https://github.com/LiDRON7/Sensor-Control-Data-Gathering/blob/main/docs/pi-known-issues.md): every problem we hit on the Pi, why, and the fix.
 - [docs/topics.md](docs/topics.md): every topic and service, who sends it and who uses it.
 - [docs/reference.md](docs/reference.md): parameters, tests and troubleshooting.
 - `docs/architecture/`: the diagrams. Open the `.excalidraw` files at [excalidraw.com](https://excalidraw.com) to edit them.

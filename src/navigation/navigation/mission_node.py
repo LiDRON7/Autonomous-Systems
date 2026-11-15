@@ -315,10 +315,11 @@ class MissionNode(Node):
         # Anything lower than the drone's own centre stood on the pad is ground or grass (#102).
         pad_z = self.takeoff_point[2] if self.takeoff_point else self.position[2]
         above_pad = pad_z - self.position[2]
+        max_height = float(self.get_parameter("map.max_height_m").value)
+        # Clamped: landed below the pad's height, the cutoff would pass the top of the band and raise.
+        min_height = min(max(float(self.get_parameter("map.min_height_m").value), -(above_pad + translation[2])), max_height)
         world, valid_count = depth_points_to_world(
-            raw, self.position, self.yaw,
-            max(float(self.get_parameter("map.min_height_m").value), -(above_pad + translation[2])),
-            float(self.get_parameter("map.max_height_m").value),
+            raw, self.position, self.yaw, min_height, max_height,
             translation,
             math.radians(float(self.get_parameter("map.sensor_pitch_down_deg").value)),
             float(self.get_parameter("map.min_range_m").value),
