@@ -48,6 +48,10 @@ track() {
   [ -z "${u:-}" ] && return 0
   [ -n "${pt:-}" ] && calc "r=($r); p=($pt); exit !(r*r>1.0 || p*p>1.0)" \
     && { fail "drone flipped (roll $r, pitch $pt)"; return 1; }
+  if [ -n "${wall_e:-}" ]; then
+    wall_min=$(calc "dx=($e)-($wall_e); if(dx<0)dx=-dx; dx-=0.15; if(dx<0)dx=0; dy=($n)-($wall_n); if(dy<0)dy=-dy; dy-=1.5;
+      if(dy<0)dy=0; m=sqrt(dx*dx+dy*dy)-($radius); printf \"%.2f\", (m<($wall_min)?m:($wall_min))")
+  fi
   tree_min=$(calc "dc=sqrt(($e-5)^2+($n-15)^2+($u-4.5)^2)-1.2-($radius);
     dt=sqrt(($e-5)^2+($n-15)^2)-0.12-($radius); if($u>3.6+($radius)) dt=99;
     m=(dc<dt?dc:dt); printf \"%.2f\", (m<($tree_min)?m:($tree_min))")
@@ -96,7 +100,7 @@ settle() {
 
 # enable needs a passing preflight check from the last 30 s (#110).
 fly() {
-  tree_min=99; destination "$1" "$2"
+  tree_min=99; wall_min=99; destination "$1" "$2"
   local check; check="$(call /autonomy/preflight_check std_srvs/srv/Trigger '{}')"
   [[ "$check" == *"success=True"* ]] || echo "  preflight: $check"
   enable true
@@ -195,17 +199,42 @@ scenario_battery() {
   px4 param set SIM_BAT_DRAIN 60 >/dev/null; px4 param set SIM_BAT_MIN_PCT 50 >/dev/null
 }
 
+# A wall that shows up 2.5 m ahead mid-flight, with the hardware's 2 m obstacle trigger (#95, #97). Not in the default
+# list yet: until #95 is fixed the drone stops in front of it. Run it by name: ./scripts/sim_scenarios.sh popup
+wall() {
+  local x=$1 y=$2 yaw=$3 sdf
+  sdf="<sdf version='1.9'><model name='wall'><static>true</static><pose>$x $y 3 0 0 $yaw</pose><link name='l'>"
+  sdf+="<collision name='c'><geometry><box><size>0.3 3 6</size></box></geometry></collision>"
+  sdf+="<visual name='v'><geometry><box><size>0.3 3 6</size></box></geometry></visual></link></model></sdf>"
+  docker exec drone_sim_dev gz service -s /world/outdoor_field/create --reqtype gz.msgs.EntityFactory \
+    --reptype gz.msgs.Boolean --timeout 5000 --req "sdf: \"$sdf\"" 2>&1 | grep -q true
+}
+unwall() { docker exec drone_sim_dev gz service -s /world/outdoor_field/remove --reqtype gz.msgs.Entity \
+  --reptype gz.msgs.Boolean --timeout 5000 --req 'name: "wall" type: MODEL' >/dev/null 2>&1; }
+
+scenario_popup() {
+  ros "timeout 20 ros2 param set /perception obstacle_threshold_m 2.0" >/dev/null
+  west 30; fly "$dest_n" "$dest_e"
+  wait_state NAVIGATING 200 ABORT PILOT_OVERRIDE || return
+  sim_sleep 4
+  read -r e n _ <<<"$(pose)"
+  wall "$(calc "printf \"%.2f\", $e-2.5-($radius)")" "$n" 0 || { fail "could not place the wall"; return; }
+  echo "  wall placed 2.5 m ahead of the drone's nose"
+  wall_e=$(calc "printf \"%.2f\", $e-2.5-($radius)"); wall_n=$n
+  wait_state REPLANNING 20 ABORT PILOT_OVERRIDE && ok "saw the wall and replanned"
+  wait_state COMPLETE 500 ABORT PILOT_OVERRIDE && landed_near "$dest_n" "$dest_e" 1.5
+  if calc "exit !($wall_min>0.2)"; then ok "closest to the wall: ${wall_min} m"
+  else fail "came within ${wall_min} m of the wall (hit it if below 0)"; fi
+  unwall; wall_e=""
+  ros "timeout 20 ros2 param set /perception obstacle_threshold_m 1.5" >/dev/null
+}
+
 scenario_perception_crash() {
   fly 10.0 5.0
   wait_state NAVIGATING 200 ABORT PILOT_OVERRIDE || return
   echo "  killing perception_node"; ros "pkill -f perception_node" >/dev/null
-  if [[ "$drone" == huntsman ]]; then
-    # No landing verdicts means stale LiDAR data: HOLD, then a controlled landing after hold_timeout_s.
-    wait_state HOLD 15 && wait_state ABORT 60 && ok "held, then landed on its own"
-  else
-    echo "  (Widow's health check does not include perception; the map still comes from the depth points)"
-    wait_state COMPLETE 400 ABORT PILOT_OVERRIDE
-  fi
+  # No obstacle flags (both drones) and no landing verdicts (Huntsman) mean HOLD, then a landing after hold_timeout_s (#96).
+  wait_state HOLD 15 && wait_state ABORT 60 && ok "held, then landed on its own"
   wait_disarmed 180
   echo "  restarting the autonomy container"; docker restart lidron_autonomy >/dev/null; sleep 30
 }

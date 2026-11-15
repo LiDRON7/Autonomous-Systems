@@ -71,3 +71,12 @@ def test_landing_completes_only_after_px4_disarms():
     node.vehicle_status = SimpleNamespace(arming_state=VehicleStatus.ARMING_STATE_DISARMED)
     node._wait_for_landing()
     assert node.state == MissionState.COMPLETE
+
+
+def test_silent_perception_blocks_the_mission_even_without_lidar():
+    # #96: Widow (no LiDAR) kept flying on a stale obstacle flag when perception died.
+    node = mission(require_lidar=False)
+    node.stamps['obstacle'] = 10.0
+    assert node._health_ok()
+    node.stamps['obstacle'] = 8.0
+    assert not node._health_ok()

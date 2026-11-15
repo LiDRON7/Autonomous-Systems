@@ -117,6 +117,8 @@ class MissionNode(Node):
             "depth": None,
             "lidar": None,
             "status": None,
+            # #96: a dead perception node left the last obstacle flag in place; now its silence means HOLD.
+            "obstacle": None,
         }
         self.obstacle_detected = False
         self.landing_suitable = False
@@ -290,6 +292,7 @@ class MissionNode(Node):
 
     def _on_obstacle(self, msg: Bool) -> None:
         self.obstacle_detected = bool(msg.data)
+        self.stamps["obstacle"] = self._now()
 
     def _on_landing_assessment(self, msg: String) -> None:
         try:
