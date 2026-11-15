@@ -247,6 +247,7 @@ def test_restart_rejects_unconfirmed_ground_state(node, case):
 
 def test_explicit_enable_restarts_with_fresh_disarmed_status(node):
     # PX4 1.15 never sends vehicle_land_detected over DDS, so disarmed is all we can ask for.
+    node.preflight_passed_at = node._now()
     takeover(node)
     status(node, arming=VehicleStatus.ARMING_STATE_DISARMED)
     node.destination = (9.0, 1.0, -5.0)  # Previous landing-search target.
@@ -280,6 +281,7 @@ def test_destination_can_change_without_unlocking_override(node):
 
 
 def test_normal_preflight_takeoff_and_navigation_still_work(node):
+    node.preflight_passed_at = node._now()
     node.state = MissionState.IDLE
     assert enable(node).success
     for _ in range(10):

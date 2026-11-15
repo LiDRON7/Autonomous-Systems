@@ -94,7 +94,13 @@ settle() {
   px4 param set SIM_BAT_DRAIN 60 >/dev/null; px4 param set SIM_BAT_MIN_PCT 50 >/dev/null
 }
 
-fly() { tree_min=99; destination "$1" "$2"; enable true; }
+# enable needs a passing preflight check from the last 30 s (#110).
+fly() {
+  tree_min=99; destination "$1" "$2"
+  local check; check="$(call /autonomy/preflight_check std_srvs/srv/Trigger '{}')"
+  [[ "$check" == *"success=True"* ]] || echo "  preflight: $check"
+  enable true
+}
 
 scenario_a_to_b() {
   fly 5.0 5.0
