@@ -96,6 +96,7 @@ settle() {
   ros "timeout 20 ros2 param set /mission mission_timeout_s 300.0" >/dev/null
   ros "timeout 20 ros2 param set /mission cruise_altitude_m 5.0" >/dev/null
   px4 param set SIM_BAT_DRAIN 60 >/dev/null; px4 param set SIM_BAT_MIN_PCT 50 >/dev/null
+  px4 param set BAT_LOW_THR 0.15 >/dev/null; px4 param set BAT_CRIT_THR 0.07 >/dev/null; px4 param set BAT_EMERGEN_THR 0.05 >/dev/null
 }
 
 # enable needs a passing preflight check from the last 30 s (#110).
@@ -194,11 +195,12 @@ scenario_timeout() {
 
 scenario_battery() {
   echo "  PX4 low battery action (COM_LOW_BAT_ACT): $(px4 param show COM_LOW_BAT_ACT | awk '/COM_LOW_BAT_ACT/{print $NF}')"
-  # The simulated battery empties about 8 s after arming, so PX4's failsafe fires during the climb or cruise.
-  # Down to 0 %: at a 5 % floor PX4's load-compensated estimate sat at 17 % in the air, over BAT_LOW_THR (15 %),
-  # and the failsafe only fired once the motors throttled down for the landing.
-  px4 param set SIM_BAT_MIN_PCT 0 >/dev/null; px4 param set SIM_BAT_DRAIN 8 >/dev/null
-  west 25; fly "$dest_n" "$dest_e"
+  # PX4's load-compensated estimate stays near 17 % in the air, over the default 15 % low threshold, so the failsafe
+  # only fired once the motors throttled down for the landing. Raised thresholds and a 20 s drain make it fire mid-cruise
+  # on a 40 m flight, which is what this tests: PX4 takes over in the air and autonomy stands down.
+  px4 param set SIM_BAT_MIN_PCT 5 >/dev/null; px4 param set SIM_BAT_DRAIN 20 >/dev/null
+  px4 param set BAT_LOW_THR 0.5 >/dev/null; px4 param set BAT_CRIT_THR 0.45 >/dev/null; px4 param set BAT_EMERGEN_THR 0.4 >/dev/null
+  west 40; fly "$dest_n" "$dest_e"
   wait_state PILOT_OVERRIDE 200 COMPLETE ABORT LANDING || return
   read -r _ _ u _ <<<"$(pose)"
   calc "exit !(($u)>1.0)" && ok "PX4 battery failsafe took over in the air at ${u} m (nav_state $(nav_state))" \
