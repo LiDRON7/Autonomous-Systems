@@ -195,7 +195,9 @@ scenario_timeout() {
 scenario_battery() {
   echo "  PX4 low battery action (COM_LOW_BAT_ACT): $(px4 param show COM_LOW_BAT_ACT | awk '/COM_LOW_BAT_ACT/{print $NF}')"
   # The simulated battery empties about 8 s after arming, so PX4's failsafe fires during the climb or cruise.
-  px4 param set SIM_BAT_MIN_PCT 5 >/dev/null; px4 param set SIM_BAT_DRAIN 8 >/dev/null
+  # Down to 0 %: at a 5 % floor PX4's load-compensated estimate sat at 17 % in the air, over BAT_LOW_THR (15 %),
+  # and the failsafe only fired once the motors throttled down for the landing.
+  px4 param set SIM_BAT_MIN_PCT 0 >/dev/null; px4 param set SIM_BAT_DRAIN 8 >/dev/null
   west 25; fly "$dest_n" "$dest_e"
   wait_state PILOT_OVERRIDE 200 COMPLETE ABORT LANDING || return
   read -r _ _ u _ <<<"$(pose)"
