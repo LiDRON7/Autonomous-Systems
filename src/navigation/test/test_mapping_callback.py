@@ -30,7 +30,7 @@ def mission_methods(**overrides):
     exec(compile(ast.fix_missing_locations(module), str(source), 'exec'), scope)
     parameters = {'map.min_height_m': -1.5, 'map.max_height_m': 1.5, 'map.min_range_m': 0.2,
                   'map.sensor_translation_flu_m': [0.0, 0.0, 0.0], 'map.sensor_pitch_down_deg': 0.0}
-    node = SimpleNamespace(position=(0, 0, -5), yaw=0.0, now=10.0, stamps={},
+    node = SimpleNamespace(position=(0, 0, -5), takeoff_point=None, yaw=0.0, now=10.0, stamps={},
                            grid=RollingGrid(inflation_m=0.0), grid_origin=(0, 0),
                            state=MissionState.IDLE, mission_started=None,
                            destination=(6, 0, -5), published=[], path_published=[],
@@ -58,6 +58,19 @@ def test_actual_callback_inserts_expected_obstacle_and_stamps_depth():
     assert cell in node.grid.occupied
     assert node.stamps['depth'] == 10.0
     assert len(node.published) == 1
+
+
+def test_ground_on_the_pad_and_on_the_climb_is_not_an_obstacle():
+    # Camera 0.2 m above the grass: ground 3 m ahead reads 0.2 m below the camera.
+    node = mission_methods(position=(0, 0, 0))
+    node._on_depth_points(SimpleNamespace(points=[[3, 0, -0.2], [3, 1, 0.5]]))
+    assert node.grid.to_cell((3, -1), node.grid_origin) in node.grid.occupied
+    assert node.grid.to_cell((3, 0), node.grid_origin) not in node.grid.occupied
+    # 1 m up on the climb the same ground is 1.2 m below; a crate top 0.5 m below still counts.
+    node = mission_methods(position=(0, 0, -1.0), takeoff_point=(0, 0, 0))
+    node._on_depth_points(SimpleNamespace(points=[[3, 0, -1.2], [3, 1, -0.5]]))
+    assert node.grid.to_cell((3, -1), node.grid_origin) in node.grid.occupied
+    assert node.grid.to_cell((3, 0), node.grid_origin) not in node.grid.occupied
 
 
 def test_callback_thins_a_full_resolution_cloud():

@@ -311,11 +311,15 @@ class MissionNode(Node):
         # shortcut: keeps every n-th point so a full-resolution cloud (Gazebo sends 300 000) cannot
         # stall the 10 Hz offboard stream. The drone's camera node already sends about 4 000.
         raw = raw[::max(1, len(raw) // MAX_CLOUD_POINTS)]
+        translation = self.get_parameter("map.sensor_translation_flu_m").value
+        # Anything lower than the drone's own centre stood on the pad is ground or grass (#102).
+        pad_z = self.takeoff_point[2] if self.takeoff_point else self.position[2]
+        above_pad = pad_z - self.position[2]
         world, valid_count = depth_points_to_world(
             raw, self.position, self.yaw,
-            float(self.get_parameter("map.min_height_m").value),
+            max(float(self.get_parameter("map.min_height_m").value), -(above_pad + translation[2])),
             float(self.get_parameter("map.max_height_m").value),
-            self.get_parameter("map.sensor_translation_flu_m").value,
+            translation,
             math.radians(float(self.get_parameter("map.sensor_pitch_down_deg").value)),
             float(self.get_parameter("map.min_range_m").value),
         )
