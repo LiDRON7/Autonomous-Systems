@@ -21,7 +21,7 @@ ros() { docker exec lidron_autonomy bash -c "source /autonomy/install/setup.bash
 state() { docker logs lidron_autonomy 2>&1 | grep -oE "mission_node-[0-9]+\]: process started|Mission [A-Z_]+ -> [A-Z_]+" \
   | tail -1 | awk '/process started/{print "IDLE"; next} {print $NF}'; }
 call() { ros "timeout 20 ros2 service call $*" | grep -E "success|accepted|message" | tr -s ' ' | tr '\n' ' '; echo; }
-destination() { call /autonomy/set_local_destination interfaces/srv/SetLocalDestination "'{north: $1, east: $2, down: 0.0}'"; }
+destination() { echo "  destination: N $1 E $2"; call /autonomy/set_local_destination interfaces/srv/SetLocalDestination "'{north: $1, east: $2, down: 0.0}'"; }
 enable() { call /autonomy/enable std_srvs/srv/SetBool "'{data: $1}'"; }
 px4() { docker exec -w /px4/build/px4_sitl_default drone_px4 timeout 10 ./bin/px4-"$1" "${@:2}" 2>&1; }
 nav_state() { px4 listener vehicle_status -n 1 | awk '$1=="nav_state:"{print $2; exit}'; }
