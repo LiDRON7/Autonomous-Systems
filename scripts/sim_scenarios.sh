@@ -101,7 +101,13 @@ settle() {
 # enable needs a passing preflight check from the last 30 s (#110).
 fly() {
   tree_min=99; wall_min=99; destination "$1" "$2"
-  local check; check="$(call /autonomy/preflight_check std_srvs/srv/Trigger '{}')"
+  # Right after start-up PX4's topics can take a few seconds to reach the Pi side: retry for up to a minute.
+  local check
+  for _ in $(seq 20); do
+    check="$(call /autonomy/preflight_check std_srvs/srv/Trigger '{}')"
+    [[ "$check" == *"success=True"* ]] && break
+    sleep 3
+  done
   [[ "$check" == *"success=True"* ]] || echo "  preflight: $check"
   enable true
 }
