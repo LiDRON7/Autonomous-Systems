@@ -30,7 +30,7 @@ def mission_methods(**overrides):
     exec(compile(ast.fix_missing_locations(module), str(source), 'exec'), scope)
     parameters = {'map.min_height_m': -1.5, 'map.max_height_m': 1.5, 'map.min_range_m': 0.2,
                   'map.sensor_translation_flu_m': [0.0, 0.0, 0.0], 'map.sensor_pitch_down_deg': 0.0}
-    node = SimpleNamespace(position=(0, 0, -5), takeoff_point=None, yaw=0.0, now=10.0, stamps={},
+    node = SimpleNamespace(position=(0, 0, -5), takeoff_point=None, yaw=0.0, roll=0.0, pitch=0.0, now=10.0, stamps={},
                            grid=RollingGrid(inflation_m=0.0), grid_origin=(0, 0),
                            state=MissionState.IDLE, mission_started=None,
                            destination=(6, 0, -5), published=[], path_published=[],

@@ -107,6 +107,8 @@ class MissionNode(Node):
         self.destination: tuple[float, float, float] | None = None
         self.original_destination: tuple[float, float, float] | None = None
         self.yaw = 0.0
+        self.roll = 0.0
+        self.pitch = 0.0
         self.vehicle_status: VehicleStatus | None = None
         self.preflight_passed_at: float | None = None
 
@@ -249,6 +251,8 @@ class MissionNode(Node):
     def _on_attitude(self, msg: VehicleAttitude) -> None:
         w, x, y, z = (float(value) for value in msg.q)
         self.yaw = math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+        self.roll = math.atan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y))
+        self.pitch = math.asin(max(-1.0, min(1.0, 2.0 * (w * y - z * x))))
 
     def _on_command_ack(self, msg: VehicleCommandAck) -> None:
         command = int(msg.command)
@@ -326,6 +330,7 @@ class MissionNode(Node):
             translation,
             math.radians(float(self.get_parameter("map.sensor_pitch_down_deg").value)),
             float(self.get_parameter("map.min_range_m").value),
+            self.roll, self.pitch,
         )
         now = self._now()
         self.grid_origin = self.grid.origin_around(self.position[:2])
