@@ -110,3 +110,73 @@ def test_automatic_hold_can_still_recover():
     node._recover_from_hold()
 
     assert node.state == MissionState.REPLANNING
+
+def test_takeoff_resumes_after_automatic_hold():
+    node = make_mission()
+
+    node.state = MissionState.HOLD
+    node.state_before_hold = MissionState.TAKEOFF
+
+    node._recover_from_hold()
+
+    assert node.state == MissionState.TAKEOFF
+
+
+def test_takeoff_hold_transition_preserves_previous_state():
+    import ast
+    from pathlib import Path
+    from types import MethodType, SimpleNamespace
+    from navigation.state import can_transition
+
+    source = Path(__file__).parents[1] / "navigation/mission_node.py"
+    tree = ast.parse(source.read_text())
+
+    mission_class = next(
+        item for item in tree.body
+        if isinstance(item, ast.ClassDef) and item.name == "MissionNode"
+    )
+
+    transition = next(
+        item for item in mission_class.body
+        if isinstance(item, ast.FunctionDef)
+        and item.name == "_transition"
+    )
+
+    scope = {
+        "MissionState": MissionState,
+        "can_transition": can_transition,
+    }
+
+    exec(
+        compile(ast.Module(body=[transition], type_ignores=[]), str(source), "exec"),
+        scope,
+    )
+
+    class Logger:
+        def info(self, message):
+            pass
+
+    node = SimpleNamespace(
+        state=MissionState.TAKEOFF,
+        position=None,
+        state_started=0.0,
+    )
+
+    node.get_logger = lambda: Logger()
+    node._now = lambda: 10.0
+    node._hold = lambda: None
+    node._health_ok = lambda: True
+    node.operator_hold = False
+    node.obstacle_detected = False
+
+    node._transition = MethodType(scope["_transition"], node)
+
+    node._transition(MissionState.HOLD)
+    assert node.state == MissionState.HOLD
+    assert node.state_before_hold == MissionState.TAKEOFF
+
+    node._transition(MissionState.HOLD)
+    assert node.state_before_hold == MissionState.TAKEOFF
+
+    node._transition(MissionState.TAKEOFF)
+    assert node.state == MissionState.TAKEOFF

@@ -186,22 +186,32 @@ class MissionNode(Node):
     def _now(self) -> float:
         return self.get_clock().now().nanoseconds / 1e9
 
+
     def _transition(self, state: MissionState) -> None:
         if state == self.state:
             return
+
         if not can_transition(self.state, state):
             raise RuntimeError(f"invalid mission transition: {self.state.value} -> {state.value}")
+
+        if state == MissionState.HOLD:
+            self.state_before_hold = self.state
+
         self.get_logger().info(f"Mission {self.state.value} -> {state.value}")
         self.state = state
         self.state_started = self._now()
+
         if state == MissionState.PREFLIGHT:
             self.takeoff_point = None
             self.landing_check_point = None
+
         if state == MissionState.LANDING_CHECK:
             self.landing_confirmations = 0
             self.landing_check_point = self.position
+
         if state == MissionState.HOLD and self.position:
             self.hold_point = self.position
+
 
     def _on_position(self, msg: VehicleLocalPosition) -> None:
         if not (getattr(msg, "xy_valid", True) and getattr(msg, "z_valid", True)):
@@ -420,8 +430,21 @@ class MissionNode(Node):
         now = self._now()
         timeout = float(self.get_parameter("sensor_timeout_s").value)
         require_lidar = bool(self.get_parameter("require_lidar").value)
+
         keys = [key for key in self.stamps if key != "lidar" or require_lidar]
-        return all(data_is_fresh(now, self.stamps[key], timeout) for key in keys)
+
+        stale = [
+            key for key in keys
+            if not data_is_fresh(now, self.stamps[key], timeout)
+        ]
+
+        if stale and hasattr(self, "get_logger"):
+            self.get_logger().warning(
+                f"Stale sensor data: {stale}",
+                throttle_duration_sec=2.0,
+            )
+
+        return not stale
 
     def _tick(self) -> None:
         self._refresh_grid()
@@ -574,8 +597,12 @@ class MissionNode(Node):
 
     def _recover_from_hold(self) -> None:
         self._hold()
+
         if not self.operator_hold and self._health_ok() and not self.obstacle_detected:
-            self._transition(MissionState.REPLANNING)
+            if getattr(self, "state_before_hold", None) == MissionState.TAKEOFF:
+                self._transition(MissionState.TAKEOFF)
+            else:
+                self._transition(MissionState.REPLANNING)
 
     def _wait_for_landing(self) -> None:
         # PX4 1.15 does not publish vehicle_land_detected over DDS; it disarms after touchdown.
