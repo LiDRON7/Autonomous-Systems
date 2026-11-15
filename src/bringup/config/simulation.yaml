@@ -3,6 +3,8 @@
   ros__parameters:
     use_sim_time: true
     lidar_topic: /lidar/points
+    # SITL has no RC transmitter: don't fail the preflight check on "RC signal lost". Hardware keeps it on.
+    require_rc: false
 
 perception:
   ros__parameters:

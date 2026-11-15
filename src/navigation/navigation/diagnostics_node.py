@@ -24,6 +24,8 @@ class DiagnosticsNode(Node):
         super().__init__("diagnostics")
         self.declare_parameter("diagnostic_timeout_s", 2.0)
         self.declare_parameter("require_lidar", True)
+        # The simulator has no RC transmitter, so PX4 always flags the RC link as lost there.
+        self.declare_parameter("require_rc", True)
         self.declare_parameter("lidar_topic", "/lidar/points")
         self.vehicle_status: VehicleStatus | None = None
         self.battery_status: BatteryStatus | None = None
@@ -140,6 +142,8 @@ class DiagnosticsNode(Node):
                 "global_position_invalid": "global position invalid",
                 "home_position_invalid": "home position invalid",
             }
+            if not bool(self.get_parameter("require_rc").value):
+                del checks["manual_control_signal_lost"]
             for field, description in checks.items():
                 if getattr(self.failsafe_flags, field):
                     details.append("failsafe: " + description)

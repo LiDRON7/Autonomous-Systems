@@ -35,11 +35,11 @@ def bind(node, filename, class_name, methods):
     return node
 
 
-def diagnostics():
+def diagnostics(require_rc=True):
     node = NS(time=100.0, published=[])
     node._now = lambda: node.time
     node.get_parameter = lambda name: NS(value={"diagnostic_timeout_s": 2.0,
-                                               "require_lidar": True}[name])
+                                               "require_lidar": True, "require_rc": require_rc}[name])
     node.health = {name: Health(100.0, "sensor") for name in (
         "oakd_depth_image", "oakd_depth_points", "lidar_points", "px4_status",
         "px4_position", "battery", "failsafe_flags", "gps")}
@@ -172,3 +172,11 @@ def test_hold_resume_does_not_require_disarmed_preflight():
     node.operator_hold = True
     assert node._enable(NS(data=True), NS()).success
     assert not node.operator_hold
+
+
+def test_simulator_without_rc_still_checks_the_other_flags():
+    node = diagnostics(require_rc=False)
+    node.failsafe_flags.manual_control_signal_lost = True
+    assert node._check(None, NS()).success
+    node.failsafe_flags.home_position_invalid = True
+    assert not node._check(None, NS()).success
