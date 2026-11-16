@@ -2,6 +2,7 @@
 
 import json
 import math
+from itertools import chain
 
 import rclpy
 from geometry_msgs.msg import PoseStamped
@@ -27,7 +28,9 @@ from interfaces.srv import SetGpsDestination, SetLocalDestination
 from .geo import gps_to_ned
 from .grid import RollingGrid
 from .mapping import depth_points_to_world
-from .planner import astar, landing_search_offset, simplify
+from .planner import (
+    astar, escape_leg_clear, find_escape_target, landing_search_offset, simplify,
+)
 from .state import MissionState, can_transition, data_is_fresh
 
 ACTIVE_STATES = {
@@ -110,6 +113,11 @@ class MissionNode(Node):
             "status": None,
         }
         self.obstacle_detected = False
+        self.obstacle_stamp: float | None = None
+        self.align_detour = False
+        self.detour_aligned_since: float | None = None
+        self.escape_observations: tuple[tuple[float, float], ...] = ()
+        self.escaping_buffer = False
         self.landing_suitable = False
         self.landing_confirmations = 0
         self.grid = RollingGrid(
@@ -246,6 +254,7 @@ class MissionNode(Node):
 
     def _on_obstacle(self, msg: Bool) -> None:
         self.obstacle_detected = bool(msg.data)
+        self.obstacle_stamp = self._now()
 
     def _on_landing_assessment(self, msg: String) -> None:
         try:
@@ -420,25 +429,65 @@ class MissionNode(Node):
         self._refresh_grid()
         start = self.grid.to_cell(self.position[:2], self.grid_origin)
         goal = self.grid.to_cell(self._planning_goal(), self.grid_origin)
-        route = astar(start, goal, set(self.grid.occupied), self.grid.width)
-        route = simplify(route, set(self.grid.occupied))
-        if not route:
+        occupied = set(self.grid.occupied)
+        self.escaping_buffer = start in occupied
+        self.escape_observations = ()
+        if self.escaping_buffer:
+            target = find_escape_target(self.position[:2], self.grid_origin, self.grid)
+            self.path = [target] if target is not None else []
+            self.path_index = 0
+            self.escape_observations = tuple(self.grid.observations)
+        else:
+            route = simplify(astar(start, goal, occupied, self.grid.width), occupied)
+            self.path = [self.grid.to_world(cell, self.grid_origin) for cell in route]
+            self.path_index = 1 if len(self.path) > 1 else 0
+        self.hold_point = self.position
+        if not self.path:
+            self._hold()
             self._transition(MissionState.HOLD)
             return
-        self.path = [self.grid.to_world(cell, self.grid_origin) for cell in route]
-        self.path_index = 1 if len(self.path) > 1 else 0
+        self.align_detour = (
+            self.obstacle_detected or self.escaping_buffer
+            or (self.state == MissionState.REPLANNING and self.align_detour)
+        )
+        self.detour_aligned_since = None
         self._publish_path()
         self._transition(MissionState.NAVIGATING)
 
+    def _detour_ready(self, yaw: float) -> bool:
+        assert self.hold_point is not None
+        error = math.remainder(yaw - self.yaw, math.tau)
+        if abs(error) > math.radians(10):
+            self.detour_aligned_since = None
+        elif self.detour_aligned_since is None:
+            self.detour_aligned_since = self._now()
+        elif (
+            self.obstacle_stamp is not None
+            and self.obstacle_stamp > self.detour_aligned_since
+            and self._obstacle_reading_fresh()
+            and not self.obstacle_detected
+        ):
+            self.align_detour = False
+            return True
+        self._setpoint(*self.hold_point, yaw)
+        return False
+
+    def _obstacle_reading_fresh(self) -> bool:
+        timeout = float(self.get_parameter("sensor_timeout_s").value)
+        return data_is_fresh(self._now(), self.obstacle_stamp, timeout)
+
     def _navigate(self) -> None:
         assert self.position and self.destination
-        if self.obstacle_detected:
+        if not self.align_detour and self.obstacle_detected:
+            self.align_detour = True
             self.hold_point = self.position
             self._hold()
             self._transition(MissionState.REPLANNING)
             return
         if self.path_index >= len(self.path):
-            if math.dist(self.position[:2], self.destination[:2]) <= float(
+            if self.escaping_buffer:
+                self._transition(MissionState.PLANNING)
+            elif math.dist(self.position[:2], self.destination[:2]) <= float(
                 self.get_parameter("arrival_tolerance_m").value
             ):
                 self._transition(MissionState.APPROACH)
@@ -447,11 +496,31 @@ class MissionNode(Node):
             return
         north, east = self.path[self.path_index]
         target_z = self.destination[2]
+        tolerance = float(self.get_parameter("arrival_tolerance_m").value)
+        if self.escaping_buffer:
+            assert self.hold_point is not None
+            target_z = self.hold_point[2]
+            tolerance = min(tolerance, self.grid.resolution / 4.0)
+            obstacles = chain(self.escape_observations, self.grid.observations)
+            if not escape_leg_clear(self.position[:2], (north, east), obstacles, self.grid):
+                self.hold_point = self.position
+                self._hold()
+                self._transition(MissionState.HOLD)
+                return
         yaw = math.atan2(east - self.position[1], north - self.position[0])
+        if self.align_detour and not self._detour_ready(yaw):
+            return
+        if self.escaping_buffer and not self._obstacle_reading_fresh():
+            self.hold_point = self.position
+            self._hold()
+            self._transition(MissionState.HOLD)
+            return
         self._setpoint(north, east, target_z, yaw)
-        if math.dist(self.position[:2], (north, east)) <= float(
-            self.get_parameter("arrival_tolerance_m").value
-        ):
+        reached = math.dist(self.position[:2], (north, east)) <= tolerance
+        if self.escaping_buffer:
+            start = self.grid.to_cell(self.position[:2], self.grid_origin)
+            reached = reached and start not in self.grid.occupied
+        if reached:
             self.path_index += 1
 
     def _approach(self) -> None:
