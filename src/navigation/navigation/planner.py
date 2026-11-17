@@ -1,9 +1,10 @@
 """A* planning and path simplification on a rolling occupancy grid."""
 
 import math
+from collections.abc import Iterable
 from heapq import heappop, heappush
 
-from .grid import Cell
+from .grid import Cell, Point, RollingGrid
 
 NEIGHBORS = tuple(
     (dx, dy)
@@ -76,6 +77,48 @@ def astar(start: Cell, goal: Cell, occupied: set[Cell], width: int) -> list[Cell
         route.append(node)
         node = came_from[node]
     return list(reversed(route))
+
+
+def escape_leg_clear(
+    start: Point, target: Point, obstacles: Iterable[Point], grid: RollingGrid,
+) -> bool:
+    """Check the actual segment against measured obstacles before leaving inflation."""
+    dx, dy = target[0] - start[0], target[1] - start[1]
+    length_squared = dx * dx + dy * dy
+    cell_radius = grid.resolution / math.sqrt(2.0)
+    exit_clearance = max(grid.inflation_m, cell_radius)
+    for obstacle in obstacles:
+        clearance = math.dist(start, obstacle)
+        if clearance < cell_radius or math.dist(target, obstacle) < exit_clearance:
+            return False
+        if length_squared:
+            ox, oy = obstacle[0] - start[0], obstacle[1] - start[1]
+            fraction = max(0.0, min(1.0, (ox * dx + oy * dy) / length_squared))
+            closest = start[0] + fraction * dx, start[1] + fraction * dy
+            if math.dist(closest, obstacle) < min(clearance, exit_clearance):
+                return False
+    return True
+
+
+def find_escape_target(start: Point, origin: Point, grid: RollingGrid) -> Point | None:
+    """Find a nearby free cell reachable by a straight segment away from obstacles."""
+    start_x, start_y = grid.to_cell(start, origin)
+    if any(grid.to_cell(point, origin) == (start_x, start_y) for point in grid.observations):
+        return None
+    radius = math.ceil(grid.inflation_m / grid.resolution) + 1
+    candidates = [
+        grid.to_world((x, y), origin)
+        for x in range(start_x - radius, start_x + radius + 1)
+        for y in range(start_y - radius, start_y + radius + 1)
+        if grid.in_bounds((x, y)) and (x, y) not in grid.occupied
+    ]
+    return next(
+        (
+            target for target in sorted(candidates, key=lambda point: math.dist(start, point))
+            if escape_leg_clear(start, target, grid.observations, grid)
+        ),
+        None,
+    )
 
 
 def _line_clear(a: Cell, b: Cell, occupied: set[Cell]) -> bool:
