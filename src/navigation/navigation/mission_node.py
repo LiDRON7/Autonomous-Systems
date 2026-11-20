@@ -341,7 +341,6 @@ class MissionNode(Node):
             f"occupied_cells={len(self.grid.occupied)}",
             throttle_duration_sec=2.0,
         )
-        self._publish_grid()
 
     def _refresh_grid(self) -> None:
         if self.position is None:
