@@ -53,16 +53,25 @@ class RollingGrid:
                 per_cell[self.to_cell(point, origin)] = point, stamp
             newest = sorted(per_cell.values(), key=lambda item: item[1], reverse=True)
             self.observations = dict(newest[:self.max_observations])
-        self.occupied = {}
-        radius = math.ceil(self.inflation_m / self.resolution)
+        # Inflate each cell once, not each point: per point it was 5000 x 81 steps 25 times a second
+        # and starved the Pi's mission loop down to 4 Hz in flight (2026-11-20 log).
+        cells: dict[Cell, float] = {}
         for point, stamp in self.observations.items():
             cell = self.to_cell(point, origin)
-            for dx in range(-radius, radius + 1):
-                for dy in range(-radius, radius + 1):
-                    if math.hypot(dx, dy) * self.resolution <= self.inflation_m:
-                        inflated = cell[0] + dx, cell[1] + dy
-                        if self.in_bounds(inflated):
-                            self.occupied[inflated] = stamp
+            cells[cell] = max(stamp, cells.get(cell, stamp))
+        radius = math.ceil(self.inflation_m / self.resolution)
+        kernel = [
+            (dx, dy)
+            for dx in range(-radius, radius + 1)
+            for dy in range(-radius, radius + 1)
+            if math.hypot(dx, dy) * self.resolution <= self.inflation_m
+        ]
+        self.occupied = {}
+        for (x, y), stamp in cells.items():
+            for dx, dy in kernel:
+                inflated = x + dx, y + dy
+                if self.in_bounds(inflated) and stamp > self.occupied.get(inflated, -math.inf):
+                    self.occupied[inflated] = stamp
 
     def expire(self, now_s: float) -> None:
         self.observations = {
