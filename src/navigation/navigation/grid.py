@@ -3,6 +3,8 @@
 import math
 from dataclasses import dataclass, field
 
+import numpy as np
+
 Cell = tuple[int, int]
 Point = tuple[float, float]
 
@@ -66,12 +68,17 @@ class RollingGrid:
             for dy in range(-radius, radius + 1)
             if math.hypot(dx, dy) * self.resolution <= self.inflation_m
         ]
-        self.occupied = {}
+        width = self.width
+        # Newest stamp per cell on a padded array, then the margin as a max filter: one numpy op per kernel offset.
+        stamps = np.full((width + 2 * radius, width + 2 * radius), -np.inf)
         for (x, y), stamp in cells.items():
-            for dx, dy in kernel:
-                inflated = x + dx, y + dy
-                if self.in_bounds(inflated) and stamp > self.occupied.get(inflated, -math.inf):
-                    self.occupied[inflated] = stamp
+            if -radius <= x < width + radius and -radius <= y < width + radius:
+                stamps[x + radius, y + radius] = stamp
+        inflated = np.full((width, width), -np.inf)
+        for dx, dy in kernel:
+            np.maximum(inflated, stamps[radius - dx:radius - dx + width, radius - dy:radius - dy + width], out=inflated)
+        xs, ys = np.nonzero(inflated > -np.inf)
+        self.occupied = dict(zip(zip(xs.tolist(), ys.tolist()), inflated[xs, ys].tolist()))
 
     def expire(self, now_s: float) -> None:
         self.observations = {
