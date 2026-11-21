@@ -3,6 +3,8 @@
 import math
 from dataclasses import dataclass, field
 
+import numpy as np
+
 Cell = tuple[int, int]
 Point = tuple[float, float]
 
@@ -53,16 +55,30 @@ class RollingGrid:
                 per_cell[self.to_cell(point, origin)] = point, stamp
             newest = sorted(per_cell.values(), key=lambda item: item[1], reverse=True)
             self.observations = dict(newest[:self.max_observations])
-        self.occupied = {}
-        radius = math.ceil(self.inflation_m / self.resolution)
+        # Inflate each cell once, not each point: per point it was 5000 x 81 steps 25 times a second
+        # and starved the Pi's mission loop down to 4 Hz in flight (2026-11-20 log).
+        cells: dict[Cell, float] = {}
         for point, stamp in self.observations.items():
             cell = self.to_cell(point, origin)
-            for dx in range(-radius, radius + 1):
-                for dy in range(-radius, radius + 1):
-                    if math.hypot(dx, dy) * self.resolution <= self.inflation_m:
-                        inflated = cell[0] + dx, cell[1] + dy
-                        if self.in_bounds(inflated):
-                            self.occupied[inflated] = stamp
+            cells[cell] = max(stamp, cells.get(cell, stamp))
+        radius = math.ceil(self.inflation_m / self.resolution)
+        kernel = [
+            (dx, dy)
+            for dx in range(-radius, radius + 1)
+            for dy in range(-radius, radius + 1)
+            if math.hypot(dx, dy) * self.resolution <= self.inflation_m
+        ]
+        width = self.width
+        # Newest stamp per cell on a padded array, then the margin as a max filter: one numpy op per kernel offset.
+        stamps = np.full((width + 2 * radius, width + 2 * radius), -np.inf)
+        for (x, y), stamp in cells.items():
+            if -radius <= x < width + radius and -radius <= y < width + radius:
+                stamps[x + radius, y + radius] = stamp
+        inflated = np.full((width, width), -np.inf)
+        for dx, dy in kernel:
+            np.maximum(inflated, stamps[radius - dx:radius - dx + width, radius - dy:radius - dy + width], out=inflated)
+        xs, ys = np.nonzero(inflated > -np.inf)
+        self.occupied = dict(zip(zip(xs.tolist(), ys.tolist()), inflated[xs, ys].tolist()))
 
     def expire(self, now_s: float) -> None:
         self.observations = {

@@ -74,3 +74,10 @@ def test_cap_keeps_obstacle_late_in_a_large_frame():
     grid.observe(wall + [(10.0, 10.0)], (0.0, 0.0), now_s=1.0)
     assert grid.to_cell((10.0, 10.0), (0.0, 0.0)) in grid.occupied
     assert len(grid.observations) <= grid.max_observations
+
+
+def test_obstacle_just_off_the_map_still_inflates_into_it():
+    grid = RollingGrid(resolution=1.0, size_m=10.0, inflation_m=2.0)
+    grid.observe([(-1.5, 5.5)], (0.0, 0.0), now_s=1.0)  # cell (-2, 5), outside the map
+    assert (0, 5) in grid.occupied and (1, 5) not in grid.occupied
+    assert all(grid.in_bounds(cell) for cell in grid.occupied)

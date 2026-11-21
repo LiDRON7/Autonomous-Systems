@@ -66,7 +66,7 @@ def test_actual_callback_inserts_expected_obstacle_and_stamps_depth():
     cell = node.grid.to_cell((3, -1), node.grid_origin)
     assert cell in node.grid.occupied
     assert node.stamps['depth'] == 10.0
-    assert len(node.published) == 1
+    assert not node.published  # The 10 Hz tick publishes the map; per cloud too was double work on the Pi.
 
 
 def test_ground_on_the_pad_and_on_the_climb_is_not_an_obstacle():
