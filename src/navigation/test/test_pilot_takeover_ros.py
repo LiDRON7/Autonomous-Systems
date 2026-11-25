@@ -11,6 +11,7 @@ from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import String
 from std_srvs.srv import SetBool
 
 from navigation.mission_node import MissionNode
@@ -42,6 +43,11 @@ def test_real_ros_topics_stop_after_position_takeover():
         mission.position = (0.0, 0.0, -5.0)
         mission.destination = mission.original_destination = (8.0, 0.0, -5.0)
         mission.stamps = {key: now[0] for key in mission.stamps}
+
+        # Simulate a passing preflight before requesting mission activation.
+        mission._on_preflight_result(
+            String(data='{"success": true, "checked_at_s": 10.0}')
+        )
         qos = QoSProfile(
             depth=50, reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.VOLATILE,
