@@ -506,3 +506,39 @@ def test_independent_check_cannot_authorize_pending_start():
     assert not response.success
     assert node.state == MissionState.IDLE
     assert node.commands == []
+
+
+def test_independent_check_cannot_authorize_pending_start():
+    # Begin a Start request and obtain its request-specific token.
+    start_node = mission()
+    prepared = start_node._prepare_start(None, NS())
+
+    assert prepared.success
+    assert start_node.start_authorization_token == prepared.message
+
+    # Interleave an independent Check while Start is pending.
+    check_node = diagnostics()
+    check_response = check_node._check(None, NS())
+
+    assert check_response.success
+    independent_result = check_node.published[-1]
+
+    # Deliver the successful independent Check to MissionNode.
+    start_node._on_preflight_result(independent_result)
+
+    # The independent Check may update general preflight status,
+    # but must not authorize the pending Start.
+    assert start_node.preflight_passed_at == 100.0
+    assert start_node.start_preflight_passed_at is None
+    assert start_node.start_authorization_token == prepared.message
+
+    # Attempt to activate Start using its original authorization.
+    response = start_node._authorized_start(
+        NS(authorization_token=prepared.message), NS()
+    )
+
+    assert not response.success
+    assert "matching passing Start preflight" in response.message
+    assert start_node.state == MissionState.IDLE
+    assert start_node.commands == []
+    assert start_node.start_authorization_token is None
