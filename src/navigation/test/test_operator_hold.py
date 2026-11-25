@@ -16,7 +16,7 @@ def make_mission():
     methods = [
         item for item in mission_class.body
         if isinstance(item, ast.FunctionDef)
-        and item.name in {"_enable", "_recover_from_hold"}
+        and item.name in {"_enable", "_start", "_pause", "_resume", "_recover_from_hold"}
     ]
 
     module = ast.Module(body=methods, type_ignores=[])

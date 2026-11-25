@@ -2,6 +2,8 @@
 
 import json
 import math
+import time
+import uuid
 from itertools import chain
 
 import rclpy
@@ -23,7 +25,7 @@ from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Bool, String
 from std_srvs.srv import SetBool, Trigger
 
-from interfaces.srv import SetGpsDestination, SetLocalDestination
+from interfaces.srv import SetGpsDestination, SetLocalDestination, StartMission
 
 from .geo import gps_to_ned
 from .grid import RollingGrid
@@ -102,6 +104,9 @@ class MissionNode(Node):
             SetGpsDestination, "/autonomy/set_gps_destination", self._set_gps
         )
         self.create_service(SetBool, "/autonomy/enable", self._enable)
+        self.create_service(Trigger, "/autonomy/resume", self._resume)
+        self.create_service(Trigger, "/autonomy/prepare_start", self._prepare_start)
+        self.create_service(StartMission, "/autonomy/start", self._authorized_start)
         self.create_service(Trigger, "/autonomy/abort", self._abort)
 
         self.state = MissionState.IDLE
@@ -114,6 +119,10 @@ class MissionNode(Node):
         self.pitch = 0.0
         self.vehicle_status: VehicleStatus | None = None
         self.preflight_passed_at: float | None = None
+
+        self.start_authorization_token: str | None = None
+        self.start_authorization_issued_at: float | None = None
+        self.start_authorization_deadline: float | None = None
 
         self.offboard_seen = False
 
@@ -205,6 +214,7 @@ class MissionNode(Node):
         if not can_transition(self.state, state):
             raise RuntimeError(f"invalid mission transition: {self.state.value} -> {state.value}")
         self.get_logger().info(f"Mission {self.state.value} -> {state.value}")
+        self._invalidate_start_authorization()
         self.state = state
         self.state_started = self._now()
         if state == MissionState.PREFLIGHT:
@@ -364,6 +374,7 @@ class MissionNode(Node):
             response.accepted = False
             response.message = "mission is active"
             return response
+        self._invalidate_start_authorization()
         self.destination = request.north, request.east, request.down
         self.original_destination = self.destination
         response.accepted = True
@@ -398,11 +409,101 @@ class MissionNode(Node):
         except (ValueError, TypeError, KeyError, OverflowError):
             self.get_logger().warning("Ignored malformed preflight result")
 
+    def _invalidate_start_authorization(self):
+        self.start_authorization_token = None
+        self.start_authorization_issued_at = None
+        self.start_authorization_deadline = None
+
+    def _prepare_start(self, _request, response):
+        self._invalidate_start_authorization()
+
+        if self.state not in {
+            MissionState.IDLE,
+            MissionState.COMPLETE,
+            MissionState.ABORT,
+        }:
+            response.success = False
+            response.message = "mission state does not allow Start"
+            return response
+
+        if self.destination is None:
+            response.success = False
+            response.message = "set a destination first"
+            return response
+
+        self.preflight_passed_at = None
+        self.start_authorization_token = uuid.uuid4().hex
+        self.start_authorization_issued_at = self._now()
+        self.start_authorization_deadline = time.monotonic() + 30.0
+
+        response.success = True
+        response.message = self.start_authorization_token
+        return response
+
+    def _authorized_start(self, request, response):
+        if (
+            self.start_authorization_token is None
+            or request.authorization_token != self.start_authorization_token
+        ):
+            response.success = False
+            response.message = "invalid or cancelled Start authorization"
+            return response
+
+        issued_at = self.start_authorization_issued_at
+        deadline = self.start_authorization_deadline
+
+        # Consume the authorization before attempting activation.
+        self._invalidate_start_authorization()
+
+        if deadline is None or time.monotonic() > deadline:
+            response.success = False
+            response.message = "Start authorization expired"
+            return response
+
+        if (
+            issued_at is None
+            or self.preflight_passed_at is None
+            or not issued_at <= self.preflight_passed_at <= self._now()
+        ):
+            response.success = False
+            response.message = "a new passing preflight is required"
+            return response
+
+        return self._start(request, response)
+
     def _enable(self, request, response):
+        # Preserve the existing service contract for legacy clients.
+        if not request.data:
+            return self._pause(request, response)
+        if self.state == MissionState.HOLD:
+            return self._resume(request, response)
+        return self._start(request, response)
+
+    def _pause(self, _request, response):
         if self.state == MissionState.PILOT_OVERRIDE:
-            if not request.data:
-                response.success, response.message = False, "pilot override remains active"
-                return response
+            response.success, response.message = False, "pilot override remains active"
+            return response
+        if self.state not in ACTIVE_STATES:
+            response.success, response.message = False, "mission is not active"
+            return response
+        self.operator_hold = True
+        self._transition(MissionState.HOLD)
+        response.success, response.message = True, "mission holding"
+        return response
+
+    def _resume(self, _request, response):
+        if self.state != MissionState.HOLD:
+            response.success, response.message = False, "resume requires HOLD state"
+            return response
+        self.operator_hold = False
+        response.success, response.message = True, "mission resume requested"
+        return response
+
+    def _start(self, _request, response):
+        if self.state == MissionState.HOLD:
+            response.success, response.message = False, "start cannot resume a held mission"
+            return response
+        if self.state == MissionState.PILOT_OVERRIDE:
             now = self._now()
             timeout = float(self.get_parameter("sensor_timeout_s").value)
             # PX4 1.15 does not send vehicle_land_detected over DDS; disarmed is the proof it is down.
@@ -414,18 +515,6 @@ class MissionNode(Node):
                 response.success = False
                 response.message = "pilot override: fresh disarmed telemetry required"
                 return response
-        if not request.data:
-            if self.state not in ACTIVE_STATES:
-                response.success, response.message = False, "mission is not active"
-                return response
-            self.operator_hold = True
-            self._transition(MissionState.HOLD)
-            response.success, response.message = True, "mission holding"
-            return response
-        if self.state == MissionState.HOLD:
-            self.operator_hold = False
-            response.success, response.message = True, "mission resume requested"
-            return response
         if self.destination is None:
             response.success, response.message = False, "set a destination first"
             return response
@@ -460,11 +549,25 @@ class MissionNode(Node):
         return response
 
     def _abort(self, _request, response):
+        pending_start = (
+            self.start_authorization_token is not None
+            and self.start_authorization_deadline is not None
+            and time.monotonic() <= self.start_authorization_deadline
+        )
+
+        self._invalidate_start_authorization()
+        self.preflight_passed_at = None
+
         if self.state == MissionState.PILOT_OVERRIDE:
             response.success, response.message = False, "pilot override: no command sent"
             return response
         if self.state in {MissionState.IDLE, MissionState.COMPLETE, MissionState.ABORT}:
-            response.success, response.message = False, "no active mission"
+            if pending_start:
+                response.success = True
+                response.message = "pending Start authorization cancelled"
+            else:
+                response.success = False
+                response.message = "no active mission"
             return response
         self._command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
         self._transition(MissionState.ABORT)
