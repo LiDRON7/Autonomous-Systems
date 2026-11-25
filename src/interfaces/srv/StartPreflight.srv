@@ -1,0 +1,4 @@
+string authorization_token
+---
+bool success
+string message

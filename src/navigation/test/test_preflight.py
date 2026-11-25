@@ -57,7 +57,7 @@ def diagnostics(require_rc=True):
     node.gps = NS(fix_type=3, satellites_used=8, eph=2.49)
     node.preflight_result_pub = NS(publish=node.published.append)
     return bind(node, "diagnostics_node.py", "DiagnosticsNode",
-                {"_check", "_on_status", "_on_battery", "_on_failsafe_flags", "_on_gps"})
+                {"_check", "_check_start", "_run_preflight", "_on_status", "_on_battery", "_on_failsafe_flags", "_on_gps"})
 
 
 def test_healthy_check_publishes_pass_with_original_time():
@@ -134,6 +134,7 @@ def mission():
     node.start_authorization_token = None
     node.start_authorization_issued_at = None
     node.start_authorization_deadline = None
+    node.start_preflight_passed_at = None
     node.commands = []
     node.position = (0, 0, 0)
     node._command = lambda *args: node.commands.append(args)
@@ -365,7 +366,11 @@ def test_authorized_start_rejects_old_preflight():
     assert prepared.success
 
     node._on_preflight_result(
-        NS(data='{"success":true,"checked_at_s":99.0}')
+        NS(data=json.dumps({
+            "success": True,
+            "checked_at_s": 99.0,
+            "authorization_token": prepared.message
+        }))
     )
 
     response = node._authorized_start(
@@ -384,7 +389,11 @@ def test_authorized_start_accepts_valid_token():
 
     node.time = 101.0
     node._on_preflight_result(
-        NS(data='{"success":true,"checked_at_s":101.0}')
+        NS(data=json.dumps({
+            "success": True,
+            "checked_at_s": 101.0,
+            "authorization_token": prepared.message
+        }))
     )
 
     response = node._authorized_start(
@@ -407,7 +416,11 @@ def test_authorized_start_rejects_reused_token():
 
     node.time = 101.0
     node._on_preflight_result(
-        NS(data='{"success":true,"checked_at_s":101.0}')
+        NS(data=json.dumps({
+            "success": True,
+            "checked_at_s": 101.0,
+            "authorization_token": prepared.message
+        }))
     )
 
     request = NS(authorization_token=prepared.message)
@@ -429,7 +442,11 @@ def test_delayed_start_cannot_activate_after_abort():
 
     node.time = 101.0
     node._on_preflight_result(
-        NS(data='{"success":true,"checked_at_s":101.0}')
+        NS(data=json.dumps({
+            "success": True,
+            "checked_at_s": 101.0,
+            "authorization_token": prepared.message
+        }))
     )
 
     request = NS(authorization_token=prepared.message)
@@ -444,7 +461,11 @@ def test_delayed_start_cannot_activate_after_abort():
     # Simulate a late preflight result arriving after Abort.
     node.time = 102.0
     node._on_preflight_result(
-        NS(data='{"success":true,"checked_at_s":102.0}')
+        NS(data=json.dumps({
+            "success": True,
+            "checked_at_s": 102.0,
+            "authorization_token": prepared.message
+        }))
     )
 
     # The previously authorized Start must still be rejected.
@@ -454,4 +475,34 @@ def test_delayed_start_cannot_activate_after_abort():
     assert "cancelled" in response.message
     assert node.state == MissionState.IDLE
     assert node.start_authorization_token is None
+    assert node.commands == []
+
+
+def test_independent_check_cannot_authorize_pending_start():
+    node = mission()
+    diagnostic = diagnostics()
+
+    prepared = node._prepare_start(None, NS())
+    assert prepared.success
+
+    node.time = 101.0
+    diagnostic.time = 101.0
+
+    # An independent Check succeeds after Start preparation.
+    assert diagnostic._check(None, NS()).success
+
+    result = diagnostic.published[-1]
+    assert "authorization_token" not in json.loads(result.data)
+
+    node._on_preflight_result(result)
+
+    assert node.preflight_passed_at == 101.0
+    assert node.start_preflight_passed_at is None
+
+    response = node._authorized_start(
+        NS(authorization_token=prepared.message), NS()
+    )
+
+    assert not response.success
+    assert node.state == MissionState.IDLE
     assert node.commands == []

@@ -11,6 +11,7 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from sensor_msgs.msg import Image, PointCloud2
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
+from interfaces.srv import StartPreflight
 
 
 @dataclass
@@ -75,6 +76,7 @@ class DiagnosticsNode(Node):
         )
         self.preflight_result_pub = self.create_publisher(String, "/autonomy/preflight_result", 10)
         self.create_service(Trigger, "/autonomy/preflight_check", self._check)
+        self.create_service(StartPreflight, "/autonomy/start_preflight", self._check_start)
 
     def _now(self) -> float:
         return self.get_clock().now().nanoseconds / 1e9
@@ -102,6 +104,17 @@ class DiagnosticsNode(Node):
         self.health["gps"] = TopicHealth(self._now())
 
     def _check(self, _request, response):
+        return self._run_preflight(response)
+
+    def _check_start(self, request, response):
+        token = request.authorization_token
+        if len(token) != 32 or any(c not in '0123456789abcdef' for c in token):
+            response.success = False
+            response.message = "invalid Start authorization token"
+            return response
+        return self._run_preflight(response, token)
+
+    def _run_preflight(self, response, authorization_token=None):
         timeout = float(self.get_parameter("diagnostic_timeout_s").value)
         require_lidar = bool(self.get_parameter("require_lidar").value)
         now = self._now()
@@ -160,10 +173,13 @@ class DiagnosticsNode(Node):
                 details.append(f"GPS eph must be below 2.5 m and nonnegative: {self.gps.eph}")
         response.success = not details
         response.message = "; ".join(details) if details else "all required inputs are healthy"
-        self.preflight_result_pub.publish(String(data=json.dumps({
+        result = {
             "success": response.success,
             "checked_at_s": now,
-        })))
+        }
+        if authorization_token is not None:
+            result["authorization_token"] = authorization_token
+        self.preflight_result_pub.publish(String(data=json.dumps(result)))
         return response
 
 

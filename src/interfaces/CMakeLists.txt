@@ -8,6 +8,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SetLocalDestination.srv"
   "srv/SetGpsDestination.srv"
   "srv/StartMission.srv"
+  "srv/StartPreflight.srv"
 )
 
 ament_export_dependencies(rosidl_default_runtime)
