@@ -186,10 +186,30 @@ scenario_bad_landing() {
 }
 
 scenario_timeout() {
+  local start_e start_n before after
+  read -r start_e start_n _ <<<"$(pose)"
+  if [[ -z "$start_e" || -z "$start_n" ]]; then
+    fail "could not read the takeoff position"
+    return
+  fi
+
+  before=$(docker logs lidron_autonomy 2>&1 \
+    | grep -cF "Mission timeout: returning to takeoff" || true)
+
   ros "timeout 20 ros2 param set /mission mission_timeout_s 25.0" >/dev/null
-  fly -15.0 -15.0
-  wait_state ABORT 200 COMPLETE PILOT_OVERRIDE && ok "mission timeout aborted it"
-  wait_disarmed 180
+  west 50
+  fly "$dest_n" "$dest_e"
+
+  if wait_state COMPLETE 120 ABORT PILOT_OVERRIDE; then
+    after=$(docker logs lidron_autonomy 2>&1 \
+      | grep -cF "Mission timeout: returning to takeoff" || true)
+    if (( after <= before )); then
+      fail "mission completed without starting a timeout return"
+    else
+      wait_disarmed 30 && landed_near "$start_n" "$start_e" 1.5
+    fi
+  fi
+
   ros "timeout 20 ros2 param set /mission mission_timeout_s 300.0" >/dev/null
 }
 

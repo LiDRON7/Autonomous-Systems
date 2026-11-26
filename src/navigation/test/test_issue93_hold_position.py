@@ -23,7 +23,7 @@ def mission():
     parameters = dict(cruise_altitude_m=5, require_lidar=True, arrival_tolerance_m=0.75,
                       landing_confirmations=8, landing_check_timeout_s=5)
     node = SimpleNamespace(align_detour=False, escaping_buffer=False, state=MissionState.IDLE, position=(0., 0., 0.),
-                           takeoff_point=None, landing_check_point=None,
+                           takeoff_point=None, landing_check_point=None, flight_history=[],
                            yaw=0., offboard_warmup=0, landing_confirmations=0,
                            state_started=10., now=10., targets=[], commands=[], aborts=[])
     node.start_authorization_token = None

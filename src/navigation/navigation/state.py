@@ -39,7 +39,7 @@ ALLOWED_TRANSITIONS = {
         MissionState.PILOT_OVERRIDE,
     },
     MissionState.REPLANNING: {MissionState.NAVIGATING, MissionState.HOLD, MissionState.ABORT, MissionState.PILOT_OVERRIDE },
-    MissionState.APPROACH: {MissionState.LANDING_CHECK, MissionState.HOLD, MissionState.ABORT, MissionState.PILOT_OVERRIDE},
+    MissionState.APPROACH: {MissionState.LANDING_CHECK, MissionState.REPLANNING, MissionState.HOLD, MissionState.ABORT, MissionState.PILOT_OVERRIDE },
     MissionState.LANDING_CHECK: {
         MissionState.LANDING,
         MissionState.PLANNING,

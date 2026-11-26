@@ -324,3 +324,105 @@ def test_normal_abort_still_sends_land(node, reason):
                                                result=2, from_external=False, target_system=1, target_component=1,))
     assert node.state == MissionState.ABORT
     assert node.command_pub.messages[-1].command == VehicleCommand.VEHICLE_CMD_NAV_LAND
+
+@pytest.mark.parametrize("start_state", [MissionState.PLANNING, MissionState.NAVIGATING, MissionState.REPLANNING, MissionState.APPROACH,])
+def test_first_navigation_timeout_starts_return_without_landing(node, start_state):
+    node.state = start_state
+    node.takeoff_point = (0.0, 0.0, 0.0)
+    node.position = (9.0, 0.0, -5.0)
+    node.flight_history = [(0.0, 0.0), (3.0, 0.0), (6.0, 0.0)]
+    node.now += 301.0
+    node.stamps = {key: node.now for key in node.stamps}
+    status(node, VehicleStatus.NAVIGATION_STATE_OFFBOARD)
+
+    node._tick()
+
+    assert node.returning_home
+    assert node.state != MissionState.ABORT
+    assert all(
+        msg.command != VehicleCommand.VEHICLE_CMD_NAV_LAND
+        for msg in node.command_pub.messages
+    )
+    assert node.destination == (6.0, 0.0, -5.0)
+
+    for reached, next_target in [
+        ((6.0, 0.0, -5.0), (3.0, 0.0, -5.0)),
+        ((3.0, 0.0, -5.0), (0.0, 0.0, -5.0)),
+    ]:
+        node.state = MissionState.NAVIGATING
+        node.position = reached
+        node.path = [reached[:2]]
+        node.path_index = len(node.path)
+
+        node._navigate()
+
+        assert node.state == MissionState.PLANNING
+        assert node.destination == next_target
+
+    node.state = MissionState.NAVIGATING
+    node.position = (0.0, 0.0, -5.0)
+    node.path = [(0.0, 0.0)]
+    node.path_index = len(node.path)
+
+    node._navigate()
+
+    assert node.state == MissionState.APPROACH
+
+def test_return_landing_search_uses_takeoff_point(node):
+    node.state = MissionState.LANDING_CHECK
+    node.original_destination = (20.0, -10.0, -5.0)
+    node.takeoff_point = (3.0, 4.0, 0.0)
+    node.landing_search_origin = node.takeoff_point
+
+    assert node._next_search_destination()
+    assert node.destination[:2] == (4.5, 4.0)
+    assert node.state == MissionState.PLANNING
+    assert node.original_destination == (20.0, -10.0, -5.0)
+
+def test_second_timeout_lands_during_return(node):
+    node.takeoff_point = (0.0, 0.0, 0.0)
+    node.position = (9.0, 0.0, -5.0)
+    node.flight_history = [(0.0, 0.0), (3.0, 0.0), (6.0, 0.0)]
+    timeout = node.get_parameter("mission_timeout_s").value
+
+    def tick_at(now):
+        node.now = now
+        node.stamps = {key: now for key in node.stamps}
+        status(node, VehicleStatus.NAVIGATION_STATE_OFFBOARD)
+        node._tick()
+
+    tick_at(node.mission_started + timeout + 1.0)
+    assert node.returning_home
+    return_started = node.return_started
+
+    tick_at(return_started + 1.0)
+    assert node.state != MissionState.ABORT
+    assert not node.command_pub.messages
+
+    tick_at(return_started + timeout + 1.0)
+    assert node.state == MissionState.ABORT
+    assert [msg.command for msg in node.command_pub.messages] == [
+        VehicleCommand.VEHICLE_CMD_NAV_LAND
+    ]
+
+def test_return_timeout_allows_landing_to_finish(node):
+    node.returning_home = True
+    node.return_started = node.now
+    node.state = MissionState.LANDING
+    node.now += node.get_parameter("mission_timeout_s").value + 1.0
+
+    status(node, VehicleStatus.NAVIGATION_STATE_AUTO_LAND)
+    node._tick()
+
+    assert node.state == MissionState.LANDING
+    assert not node.command_pub.messages
+
+    status(
+        node,
+        VehicleStatus.NAVIGATION_STATE_AUTO_LAND,
+        arming=VehicleStatus.ARMING_STATE_DISARMED,
+    )
+    node._tick()
+
+    assert node.state == MissionState.COMPLETE
+    assert not node.command_pub.messages

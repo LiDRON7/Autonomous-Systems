@@ -45,6 +45,9 @@ def mission_methods(**overrides):
     node._flight_z = lambda: node.destination[2]
     node._now = lambda: node.now
     node._setpoint = lambda *target: node.setpoints.append(target)
+    parameters["mission_timeout_s"] = 300.0
+    node.returning_home = False
+    node.return_started = None
     node.get_parameter = lambda name: SimpleNamespace(value=parameters[name])
     node.get_logger = lambda: SimpleNamespace(debug=lambda *args, **kw: None)
     node._publish_grid = lambda: node.published.append((node.grid_origin, dict(node.grid.occupied)))
