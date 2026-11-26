@@ -14,7 +14,7 @@ def mission():
     cls = next(n for n in ast.parse(source.read_text()).body
                if isinstance(n, ast.ClassDef) and n.name == 'MissionNode')
     names = {'_transition', '_cruise_z', '_flight_z', '_preflight', '_takeoff', '_navigate', '_approach',
-             '_landing_check'}
+             '_landing_check', '_invalidate_start_authorization'}
     methods = [n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name in names]
     scope = dict(math=math, MissionState=MissionState, can_transition=can_transition,
                  VehicleCommand=SimpleNamespace(VEHICLE_CMD_DO_SET_MODE=176,
@@ -26,6 +26,9 @@ def mission():
                            takeoff_point=None, landing_check_point=None,
                            yaw=0., offboard_warmup=0, landing_confirmations=0,
                            state_started=10., now=10., targets=[], commands=[], aborts=[])
+    node.start_authorization_token = None
+    node.start_authorization_issued_at = None
+    node.start_authorization_deadline = None
     node._now = lambda: node.now
     node._health_ok = lambda: True
     node.get_parameter = lambda name: SimpleNamespace(value=parameters[name])

@@ -100,6 +100,7 @@ def node(monkeypatch):
         "std_srvs.srv": {"SetBool": SimpleNamespace, "Trigger": SimpleNamespace},
         "interfaces.srv": {
             "SetGpsDestination": SimpleNamespace, "SetLocalDestination": SimpleNamespace,
+            "StartMission": SimpleNamespace,
         },
     }
     for name, attributes in modules.items():
