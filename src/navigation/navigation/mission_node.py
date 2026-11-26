@@ -46,6 +46,12 @@ ACTIVE_STATES = {
     MissionState.HOLD,
 }
 
+RETURNABLE_STATES = {
+    MissionState.PLANNING,
+    MissionState.NAVIGATING,
+    MissionState.REPLANNING,
+    MissionState.APPROACH,
+}
 
 class MissionNode(Node):
     """Own the single PX4 offboard-control stream for an autonomous mission."""
@@ -147,6 +153,12 @@ class MissionNode(Node):
         self.operator_hold = False
         self.state_started = self._now()
         self.mission_started: float | None = None
+        self.flight_history: list[tuple[float, float]] = []
+        self.return_waypoints: list[tuple[float, float]] = []
+        self.return_waypoint_index = 0
+        self.returning_home = False
+        self.return_started: float | None = None
+        self.landing_search_origin: tuple[float, float, float] | None = None
         self.offboard_warmup = 0
         self.last_command_ack: tuple[int, int] | None = None
         self.pending_commands: set[int] = set()
@@ -163,6 +175,7 @@ class MissionNode(Node):
                 float(self.get_parameter("destination.down").value),
             )
             self.original_destination = self.destination
+            self.landing_search_origin = self.destination
             self.mission_started = self._now()
             self._transition(MissionState.PREFLIGHT)
 
@@ -176,6 +189,7 @@ class MissionNode(Node):
             "sensor_timeout_s": 1.0,
             "hold_timeout_s": 8.0,
             "mission_timeout_s": 300.0,
+            "return_path_spacing_m": 3.0,
             "landing_confirmations": 8,
             "landing_check_timeout_s": 5.0,
             "landing_search_step_m": 1.5,
@@ -223,6 +237,24 @@ class MissionNode(Node):
         if getattr(msg, "xy_global", False) and getattr(msg, "z_global", False):
             self.reference = float(msg.ref_lat), float(msg.ref_lon), float(msg.ref_alt)
         self.stamps["position"] = self._now()
+        self._record_flight_history()
+
+    def _record_flight_history(self) -> None:
+        """Record spaced horizontal positions during the outbound flight."""
+        if (
+            self.position is None
+            or self.returning_home
+            or self.state not in RETURNABLE_STATES
+        ):
+            return
+
+        point = self.position[:2]
+        spacing = float(self.get_parameter("return_path_spacing_m").value)
+        if (
+            not self.flight_history
+            or math.dist(self.flight_history[-1], point) >= spacing
+        ):
+            self.flight_history.append(point)
 
     def _on_status(self, msg: VehicleStatus) -> None:
         self.vehicle_status = msg
@@ -445,6 +477,12 @@ class MissionNode(Node):
         self.preflight_passed_at = None
         self.operator_hold = False
         self.mission_started = self._now()
+        self.flight_history.clear()
+        self.return_waypoints.clear()
+        self.return_waypoint_index = 0
+        self.returning_home = False
+        self.return_started = None
+        self.landing_search_origin = self.original_destination or self.destination
         self.offboard_seen = False
         self.offboard_warmup = 0
         self.search_index = 0
@@ -485,10 +523,24 @@ class MissionNode(Node):
             return
         if self.state in ACTIVE_STATES:
             self._publish_offboard_mode()
-        if self.mission_started and self._now() - self.mission_started > float(
-            self.get_parameter("mission_timeout_s").value
+        timeout_s = float(self.get_parameter("mission_timeout_s").value)
+        started = self.return_started if self.returning_home else self.mission_started
+        return_landing = self.returning_home and self.state == MissionState.LANDING
+        if (
+            not return_landing
+            and started is not None
+            and self._now() - started > timeout_s
         ):
-            self._safe_abort("mission timeout")
+            if (
+                not self.returning_home
+                and self.state in RETURNABLE_STATES
+                and self.takeoff_point is not None
+                and self.position is not None
+                and self._health_ok()
+            ):
+                self._begin_timeout_return()
+            else:
+                self._safe_abort("mission timeout")
             return
         if self.state == MissionState.IDLE:
             return
@@ -514,6 +566,28 @@ class MissionNode(Node):
         if handler:
             handler()
 
+    def _begin_timeout_return(self) -> None:
+        assert self.takeoff_point is not None
+        home = self.takeoff_point[:2]
+
+        self.return_waypoints = list(reversed(self.flight_history))
+        if not self.return_waypoints or self.return_waypoints[-1] != home:
+            self.return_waypoints.append(home)
+
+        self.return_waypoint_index = 0
+        self.returning_home = True
+        self.return_started = self._now()
+        self.get_logger().info("Mission timeout: returning to takeoff")
+        self.landing_search_origin = self.takeoff_point
+        self.search_index = 0
+
+        north, east = self.return_waypoints[0]
+        self.destination = (north, east, self._cruise_z())
+        self.path.clear()
+        self.path_index = 0
+        if self.state != MissionState.PLANNING:
+            self._transition(MissionState.REPLANNING)
+
     def _cruise_z(self) -> float:
         # Height above where the drone stood at preflight, not above PX4's origin, which drifts on the pad.
         ground = self.takeoff_point[2] if self.takeoff_point else 0.0
@@ -529,6 +603,7 @@ class MissionNode(Node):
             return
         if self.takeoff_point is None:
             self.takeoff_point = self.position
+            self.flight_history.append(self.takeoff_point[:2])
         cruise_z = self._cruise_z()
         self._setpoint(self.takeoff_point[0], self.takeoff_point[1], cruise_z, self.yaw)
         self.offboard_warmup += 1
@@ -620,7 +695,14 @@ class MissionNode(Node):
             elif math.dist(self.position[:2], self.destination[:2]) <= float(
                 self.get_parameter("arrival_tolerance_m").value
             ):
-                self._transition(MissionState.APPROACH)
+                next_index = self.return_waypoint_index + 1
+                if self.returning_home and next_index < len(self.return_waypoints):
+                    self.return_waypoint_index = next_index
+                    north, east = self.return_waypoints[next_index]
+                    self.destination = (north, east, self._cruise_z())
+                    self._transition(MissionState.PLANNING)
+                else:
+                    self._transition(MissionState.APPROACH)
             else:
                 self._transition(MissionState.PLANNING)
             return
@@ -681,7 +763,8 @@ class MissionNode(Node):
             self._safe_abort("no safe landing zone found")
 
     def _next_search_destination(self) -> bool:
-        assert self.original_destination
+        origin = self.landing_search_origin or self.original_destination
+        assert origin is not None
         limit = int(self.get_parameter("landing_search_limit").value)
         if self.search_index >= limit:
             return False
@@ -691,9 +774,9 @@ class MissionNode(Node):
         )
         self.search_index += 1
         self.destination = (
-            self.original_destination[0] + dx,
-            self.original_destination[1] + dy,
-            self.original_destination[2],
+            origin[0] + dx,
+            origin[1] + dy,
+            origin[2],
         )
         self._transition(MissionState.PLANNING)
         return True

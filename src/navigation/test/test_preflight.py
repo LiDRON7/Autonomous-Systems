@@ -124,7 +124,7 @@ def test_callbacks_keep_message_and_arrival_time(method, attribute, topic):
 
 def mission():
     node = NS(time=100.0, preflight_passed_at=None, state=MissionState.IDLE,
-              destination=(1, 0, -5), original_destination=(1, 0, -5), path=[])
+              destination=(1, 0, -5), original_destination=(1, 0, -5), path=[], flight_history=[], return_waypoints=[])
     node._now = lambda: node.time
     node._transition = lambda state: setattr(node, "state", state)
     node.get_logger = lambda: NS(warning=lambda message: None)
